@@ -4,7 +4,9 @@ dist/
 dist-ssr/
 out/
 release/
+build/
 coverage/
+.vite/
 *.tsbuildinfo
 
 # Java
@@ -18,14 +20,29 @@ hs_err_pid*
 # Secrets and local environment
 .env
 .env.*
+*.env
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
 
-# Logs and runtime
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+*.mv.db
+
+# Logs and local runtime
 *.log
 npm-debug.log*
+*.pid
 jarvis-smoke-result.json
+backend-runtime.json
+.jarvis/
 
 # Editors and OS
 .idea/
