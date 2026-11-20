@@ -1,0 +1,163 @@
+import { app, BrowserWindow, session, shell, type BrowserWindowConstructorOptions } from "electron";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
+export interface ShellWindowOptions {
+  dev: boolean;
+  rendererUrl: string;
+  preloadPath: string;
+  rendererFile: string;
+}
+
+export function rendererFilePath(): string {
+  return path.resolve(__dirname, "../../frontend/dist/index.html");
+}
+
+export function hardenSession(dev: boolean, rendererUrl: string): void {
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  const policy = contentSecurityPolicy(dev, rendererUrl);
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = {
+      ...details.responseHeaders,
+      "Content-Security-Policy": [policy],
+    };
+    callback({ responseHeaders });
+  });
+}
+
+export async function createMainWindow(options: ShellWindowOptions): Promise<BrowserWindow> {
+  const windowOptions: BrowserWindowConstructorOptions = {
+    width: 1280,
+    height: 820,
+    minWidth: 1100,
+    minHeight: 720,
+    show: false,
+    backgroundColor: "#04060c",
+    autoHideMenuBar: true,
+    title: "JARVIS",
+    webPreferences: {
+      preload: options.preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      devTools: options.dev,
+      spellcheck: false,
+    },
+  };
+
+  if (process.platform === "darwin") {
+    windowOptions.titleBarStyle = "hiddenInset";
+  } else if (process.platform === "win32") {
+    windowOptions.titleBarStyle = "hidden";
+    windowOptions.titleBarOverlay = {
+      color: "#04060c",
+      symbolColor: "#d7eeff",
+      height: 48,
+    };
+  }
+
+  const window = new BrowserWindow(windowOptions);
+  window.once("ready-to-show", () => {
+    window.show();
+  });
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttp(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!isAllowedNavigation(url, options)) {
+      event.preventDefault();
+    }
+  });
+  window.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`[jarvis] renderer exited: ${details.reason}`);
+  });
+  window.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error(`[jarvis] preload failed (${preloadPath}): ${error.message}`);
+  });
+  window.webContents.on("console-message", (event) => {
+    if (event.level === "warning" || event.level === "error") {
+      console.error(`[renderer] ${event.message}`);
+    }
+  });
+  window.webContents.on("did-fail-load", (_event, code, description, url) => {
+    console.error(`[jarvis] failed to load ${url}: ${code} ${description}`);
+  });
+
+  if (options.dev) {
+    await window.loadURL(options.rendererUrl);
+  } else if (!existsSync(options.rendererFile)) {
+    throw new Error("The interface build was not found. From the repository root, run npm run build.");
+  } else {
+    await window.loadFile(options.rendererFile);
+  }
+  return window;
+}
+
+export function installNavigationGuards(options: ShellWindowOptions): void {
+  app.on("web-contents-created", (_event, contents) => {
+    contents.setWindowOpenHandler(() => ({ action: "deny" }));
+    contents.on("will-navigate", (event, url) => {
+      if (!isAllowedNavigation(url, options)) {
+        event.preventDefault();
+      }
+    });
+    contents.on("will-attach-webview", (event) => {
+      event.preventDefault();
+    });
+  });
+}
+
+function isAllowedNavigation(url: string, options: ShellWindowOptions): boolean {
+  if (options.dev) {
+    try {
+      return new URL(url).origin === new URL(options.rendererUrl).origin;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    return new URL(url).protocol === "file:";
+  } catch {
+    return false;
+  }
+}
+
+function isExternalHttp(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function contentSecurityPolicy(dev: boolean, rendererUrl: string): string {
+  const origin = dev ? new URL(rendererUrl).origin : "";
+  const connect = dev ? `'self' ${origin} ${origin.replace("http://", "ws://")}` : "'self'";
+  const script = dev ? `'self' 'unsafe-inline' ${origin}` : "'self'";
+  return [
+    "default-src 'self'",
+    `script-src ${script}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    `connect-src ${connect}`,
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'none'",
+  ].join("; ");
+}

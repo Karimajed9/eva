@@ -1,0 +1,10 @@
+{
+  "name": "@jarvis/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Loopback backend for JARVIS.",
+  "scripts": {
+    "build": "node ./scripts/mvn.mjs package",
+    "test": "node ./scripts/mvn.mjs test"
+  }
+}
