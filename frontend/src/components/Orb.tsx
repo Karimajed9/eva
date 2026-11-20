@@ -1,0 +1,34 @@
+import { motion, useReducedMotion } from "motion/react";
+import type { BackendState } from "../../../shared/contract";
+import { orbTone } from "../status-copy";
+
+interface OrbProps {
+  state: BackendState;
+}
+
+export function Orb({ state }: OrbProps) {
+  const reduced = useReducedMotion();
+  return (
+    <motion.div
+      className="orb"
+      data-testid="ai-orb"
+      data-state={state}
+      data-tone={orbTone(state)}
+      initial={reduced ? false : { opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.8, ease: "easeOut" }}
+    >
+      <div className="orb-glow" />
+      <svg className="ring" viewBox="0 0 200 200" aria-hidden="true">
+        <circle cx="100" cy="100" r="94" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2 7" />
+        <circle cx="100" cy="100" r="78" fill="none" stroke="currentColor" strokeWidth="1.4" strokeDasharray="42 16 10 16" strokeLinecap="round" />
+      </svg>
+      <svg className="ring inner" viewBox="0 0 200 200" aria-hidden="true">
+        <circle cx="100" cy="100" r="90" fill="none" stroke="currentColor" strokeOpacity="0.55" strokeWidth="1" strokeDasharray="1 10" />
+      </svg>
+      <div className="orbit" aria-hidden="true"><span /></div>
+      <div className="orbit alt" aria-hidden="true"><span /></div>
+      <div className="sphere" />
+    </motion.div>
+  );
+}
