@@ -70,7 +70,7 @@ That command:
 - React cannot use Node.js or the operating system. Electron context isolation and the sandbox stay on.
 - The preload bridge has three calls. It validates messages before they reach the page.
 - Java listens on `127.0.0.1` only. Code forces that address even if configuration says otherwise.
-- Electron generates a session token in memory and sends it to Java as `JARVIS_SESSION_TOKEN`. It is not stored in source.
+- Electron generates a session token in memory and sends it to Java as `JARVIS_SESSION_TOKEN`. It is not stored in source. Java removes it from Spring's configuration before the context starts, and a log filter drops any record that still contains the value.
 - Requests must come from loopback, carry that bearer token, and use a loopback `Host`. Browser `POST`s that include an `Origin` are rejected.
 
 ## Out of scope

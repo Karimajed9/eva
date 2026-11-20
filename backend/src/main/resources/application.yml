@@ -1,6 +1,6 @@
 # The listen address is forced to loopback in LoopbackBindingConfig.
-# Do not put a session token in this file. The desktop shell injects
-# JARVIS_SESSION_TOKEN when it starts the process.
+# The session token is read from the process environment and then removed
+# from Spring's property sources. Do not add it to this file.
 server:
   port: ${JARVIS_BACKEND_PORT:17341}
   server-header: jarvis
@@ -18,9 +18,6 @@ spring:
   web:
     resources:
       add-mappings: false
-
-jarvis:
-  session-token: ${JARVIS_SESSION_TOKEN:}
 
 logging:
   level:
