@@ -1,0 +1,39 @@
+# Dependencies and builds
+node_modules/
+dist/
+dist-ssr/
+out/
+release/
+coverage/
+*.tsbuildinfo
+
+# Java
+target/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and runtime
+*.log
+npm-debug.log*
+jarvis-smoke-result.json
+
+# Editors and OS
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+.DS_Store
+Thumbs.db
+desktop.ini
