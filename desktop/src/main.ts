@@ -28,6 +28,23 @@ function shellVersion(): string {
   }
 }
 
+function reportFatal(error: unknown): void {
+  const message = error instanceof Error ? (error.stack ?? error.message) : "unknown failure";
+  console.error(`[jarvis] ${redactSecrets(message, [])}`);
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  const finish = () => {
+    app.exit(1);
+  };
+  if (!manager) {
+    finish();
+    return;
+  }
+  void manager.stop().finally(finish);
+}
+
 function broadcastStatus(): void {
   if (!manager || !mainWindow || mainWindow.isDestroyed()) {
     return;
@@ -69,6 +86,7 @@ async function bootstrap(): Promise<void> {
   registerIpc(manager, {
     dev,
     rendererUrl,
+    rendererFile: rendererFilePath(),
     version: shellVersion(),
     platform: process.platform,
   });
@@ -182,7 +200,10 @@ if (!gotLock) {
   });
 
   process.on("uncaughtException", (error) => {
-    console.error(`[jarvis] ${redactSecrets(error.stack ?? error.message, [])}`);
+    reportFatal(error);
+  });
+  process.on("unhandledRejection", (error) => {
+    reportFatal(error);
   });
 
   app.whenReady().then(bootstrap).catch((error: unknown) => {

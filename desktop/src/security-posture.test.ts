@@ -19,5 +19,7 @@ describe("security posture", () => {
     expect(preload).not.toContain("ipcRenderer.send");
     expect(preload).not.toContain("exposeInMainWorld(\"ipcRenderer\"");
     expect(main).not.toContain("nodeIntegration: true");
+    expect(windowSource).not.toContain("shell.openExternal");
+    expect(main).not.toContain("shell.openExternal");
   });
 });

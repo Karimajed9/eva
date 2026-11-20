@@ -1,10 +1,9 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IpcChannel, SHELL_NAME, type AppInfo } from "../../shared/contract";
 import type { BackendManager } from "./backend-manager";
+import { isTrustedRendererUrl, type RendererTrustOptions } from "./trusted-renderer";
 
-export interface IpcOptions {
-  dev: boolean;
-  rendererUrl: string;
+export interface IpcOptions extends RendererTrustOptions {
   version: string;
   platform: NodeJS.Platform;
 }
@@ -27,29 +26,8 @@ export function registerIpc(manager: BackendManager, options: IpcOptions): void 
 }
 
 export function assertTrustedSender(event: IpcMainInvokeEvent, options: IpcOptions): void {
-  const url = event.senderFrame?.url ?? "";
-  if (options.dev) {
-    let parsed: URL;
-    let allowed: URL;
-    try {
-      parsed = new URL(url);
-      allowed = new URL(options.rendererUrl);
-    } catch {
-      throw new Error("Untrusted renderer.");
-    }
-    if (parsed.origin !== allowed.origin || parsed.protocol !== "http:") {
-      throw new Error("Untrusted renderer.");
-    }
-    return;
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("Untrusted renderer.");
-  }
-  if (parsed.protocol !== "file:") {
+  const frame = event.senderFrame;
+  if (!frame || frame.parent != null || !isTrustedRendererUrl(frame.url, options)) {
     throw new Error("Untrusted renderer.");
   }
 }

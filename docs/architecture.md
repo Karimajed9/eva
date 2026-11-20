@@ -22,7 +22,7 @@ The renderer is loaded with `contextIsolation`, `sandbox`, and `nodeIntegration:
 - `subscribeBackendStatus(listener)`
 - `getAppInfo()`
 
-Payloads are checked against `shared/contract.ts` in the preload before React sees them. Unknown fields are rejected. The main process also ignores IPC from any origin other than the Vite dev server in development, or a `file:` URL in a built shell.
+Payloads are checked against `shared/contract.ts` in the preload before React sees them. Unknown fields are rejected. The main process accepts IPC only from the Vite dev server in development, and only from the built `index.html` in a packaged shell. Subframes are rejected. Window opens are denied, so the shell does not hand a URL to the system browser.
 
 ## Backend
 
@@ -50,7 +50,7 @@ The process refuses to start when `JARVIS_SESSION_TOKEN` is missing, shorter tha
 4. It chooses a free loopback port and starts `java -jar` with `--server.port`.
 5. It polls `GET /api/health` until the contract matches, the process exits, or 45 seconds pass.
 6. The window is shown as soon as it is ready. Status changes are pushed to the renderer.
-7. Closing the window calls `POST /api/shutdown`, waits for the process to exit, and kills it if it is still alive.
+7. Closing the window calls `POST /api/shutdown`, waits for the process to exit, and kills it if it is still alive. On Windows a process that survives that kill is ended with `taskkill`. Quitting during startup, and a fatal error in the shell, use the same shutdown. If the core exits on its own, the shell reports the connection as down and stops polling.
 
 A pid file in the temp directory records the backend pid and port, never the token. On the next launch JARVIS stops a previous process only when that pid's command line contains the backend jar name.
 

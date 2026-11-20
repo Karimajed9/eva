@@ -1,6 +1,7 @@
-import { app, BrowserWindow, session, shell, type BrowserWindowConstructorOptions } from "electron";
+import { app, BrowserWindow, session, type BrowserWindowConstructorOptions } from "electron";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { isTrustedRendererUrl } from "./trusted-renderer";
 
 export interface ShellWindowOptions {
   dev: boolean;
@@ -67,14 +68,9 @@ export async function createMainWindow(options: ShellWindowOptions): Promise<Bro
     window.show();
   });
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isExternalHttp(url)) {
-      void shell.openExternal(url);
-    }
-    return { action: "deny" };
-  });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
-    if (!isAllowedNavigation(url, options)) {
+    if (!isTrustedRendererUrl(url, options)) {
       event.preventDefault();
     }
   });
@@ -110,7 +106,7 @@ export function installNavigationGuards(options: ShellWindowOptions): void {
   app.on("web-contents-created", (_event, contents) => {
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
     contents.on("will-navigate", (event, url) => {
-      if (!isAllowedNavigation(url, options)) {
+      if (!isTrustedRendererUrl(url, options)) {
         event.preventDefault();
       }
     });
@@ -118,30 +114,6 @@ export function installNavigationGuards(options: ShellWindowOptions): void {
       event.preventDefault();
     });
   });
-}
-
-function isAllowedNavigation(url: string, options: ShellWindowOptions): boolean {
-  if (options.dev) {
-    try {
-      return new URL(url).origin === new URL(options.rendererUrl).origin;
-    } catch {
-      return false;
-    }
-  }
-  try {
-    return new URL(url).protocol === "file:";
-  } catch {
-    return false;
-  }
-}
-
-function isExternalHttp(url: string): boolean {
-  try {
-    const protocol = new URL(url).protocol;
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
-  }
 }
 
 function contentSecurityPolicy(dev: boolean, rendererUrl: string): string {

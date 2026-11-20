@@ -34,7 +34,8 @@ export class BackendManager {
   private port: number | null = null;
   private suppressExit = false;
   private poll: NodeJS.Timeout | null = null;
-  private stopping = false;
+  private disposed = false;
+  private haltPromise: Promise<void> | null = null;
   private readonly recentLogs: string[] = [];
   private readonly listeners = new Set<(status: BackendStatus) => void>();
   private readonly runtimeFilePath: string;
@@ -71,7 +72,7 @@ export class BackendManager {
   }
 
   async start(): Promise<void> {
-    if (this.child) {
+    if (this.disposed || this.child) {
       return;
     }
     this.suppressExit = false;
@@ -83,9 +84,20 @@ export class BackendManager {
       this.publish(this.failure(error));
       throw error;
     }
+    if (await this.stoppedDuringStartup()) {
+      return;
+    }
 
     await this.reapOrphan();
-    this.port = await findFreePort();
+    if (await this.stoppedDuringStartup()) {
+      return;
+    }
+    const port = await findFreePort();
+    this.port = port;
+    if (await this.stoppedDuringStartup()) {
+      this.port = null;
+      return;
+    }
     this.publish({
       state: "starting",
       detail: "Starting the local core.",
@@ -93,11 +105,11 @@ export class BackendManager {
       checkedAt: null,
     });
 
-    const child = spawn(javaPath, ["-jar", this.options.jarPath, `--server.port=${this.port}`], {
+    const child = spawn(javaPath, ["-jar", this.options.jarPath, `--server.port=${port}`], {
       env: {
         ...process.env,
         JARVIS_SESSION_TOKEN: this.token,
-        JARVIS_BACKEND_PORT: String(this.port),
+        JARVIS_BACKEND_PORT: String(port),
       },
       windowsHide: true,
       shell: false,
@@ -105,17 +117,32 @@ export class BackendManager {
     });
     this.child = child;
     this.capture(child);
+    if (await this.stoppedDuringStartup()) {
+      return;
+    }
     if (child.pid) {
       await writeRuntimeRecord(this.runtimeFilePath, {
         pid: child.pid,
-        port: this.port,
+        port,
         createdAt: new Date().toISOString(),
       });
     }
+    if (await this.stoppedDuringStartup()) {
+      return;
+    }
 
     const ready = await this.waitUntilReady();
+    if (this.disposed) {
+      await this.haltProcess();
+      return;
+    }
     if (!ready) {
+      await this.haltProcess();
       throw new Error(this.status.detail);
+    }
+    if (this.disposed) {
+      await this.haltProcess();
+      return;
     }
     this.poll = setInterval(() => {
       void this.refresh();
@@ -124,7 +151,7 @@ export class BackendManager {
   }
 
   async refresh(): Promise<BackendStatus> {
-    if (this.port === null) {
+    if (this.disposed || this.port === null) {
       return this.getStatus();
     }
     const checkedAt = new Date().toISOString();
@@ -196,10 +223,7 @@ export class BackendManager {
   }
 
   async stop(): Promise<void> {
-    if (this.stopping) {
-      return;
-    }
-    this.stopping = true;
+    this.disposed = true;
     await this.haltProcess();
     this.publish({
       state: "down",
@@ -207,12 +231,22 @@ export class BackendManager {
       health: null,
       checkedAt: new Date().toISOString(),
     });
-    this.stopping = false;
+  }
+
+  private async stoppedDuringStartup(): Promise<boolean> {
+    if (!this.disposed) {
+      return false;
+    }
+    await this.haltProcess();
+    return true;
   }
 
   private async waitUntilReady(): Promise<boolean> {
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
     while (Date.now() < deadline) {
+      if (this.disposed) {
+        return false;
+      }
       if (!this.child || this.child.exitCode !== null || this.child.signalCode !== null) {
         this.publish({
           state: "error",
@@ -241,7 +275,16 @@ export class BackendManager {
     return false;
   }
 
-  private async haltProcess(): Promise<void> {
+  private haltProcess(): Promise<void> {
+    if (!this.haltPromise) {
+      this.haltPromise = this.haltProcessOnce().finally(() => {
+        this.haltPromise = null;
+      });
+    }
+    return this.haltPromise;
+  }
+
+  private async haltProcessOnce(): Promise<void> {
     this.suppressExit = true;
     if (this.poll) {
       clearInterval(this.poll);
@@ -269,6 +312,10 @@ export class BackendManager {
     }
     if (child && child.exitCode === null && child.signalCode === null) {
       child.kill();
+      await waitForExit(child, 3_000);
+    }
+    if (child?.pid && child.exitCode === null && child.signalCode === null && process.platform === "win32") {
+      await forceKillWindows(child.pid);
       await waitForExit(child, 3_000);
     }
     this.child = null;
@@ -315,9 +362,14 @@ export class BackendManager {
       this.publish(this.failure(error));
     });
     child.once("exit", (code, signal) => {
-      if (this.stopping || this.suppressExit) {
+      if (this.poll) {
+        clearInterval(this.poll);
+        this.poll = null;
+      }
+      if (this.disposed || this.suppressExit || this.status.state === "starting") {
         return;
       }
+      void removeRuntimeRecord(this.runtimeFilePath);
       this.publish({
         state: "down",
         detail: this.withTail(`The local core exited (${signal ?? code ?? "unknown"}).`),
@@ -344,6 +396,9 @@ export class BackendManager {
   }
 
   private publish(status: BackendStatus): BackendStatus {
+    if (this.disposed && status.state !== "down") {
+      return this.getStatus();
+    }
     this.status = status;
     const snapshot = this.getStatus();
     for (const listener of this.listeners) {
@@ -356,6 +411,18 @@ export class BackendManager {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
+  });
+}
+
+function forceKillWindows(pid: number): Promise<void> {
+  return new Promise((resolve) => {
+    const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      windowsHide: true,
+      shell: false,
+      stdio: "ignore",
+    });
+    killer.once("exit", () => resolve());
+    killer.once("error", () => resolve());
   });
 }
 
