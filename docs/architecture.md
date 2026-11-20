@@ -80,7 +80,7 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 
 - A process running as the same desktop user can read the Java process environment and present the session token.
 - Loopback HTTP is not encrypted. Local software can observe it.
-- If Electron crashes hard enough to skip shutdown, the pid file is the recovery path. A reused pid whose command line cannot be confirmed is left alone.
+- If the shell process is terminated without running its quit handlers, the pid file is the recovery path. A reused pid whose command line cannot be confirmed is left alone.
 - There is no installer. `npm start` launches the shell from the source tree.
 - Development builds allow Electron DevTools. Packaged windows disable them.
-- This repository does not yet run the GitHub Actions workflow; the same `npm test` command is what that workflow calls.
+- GitHub Actions builds and tests the backend, the React app, and the Electron shell on pull requests. This checkout has not executed that workflow on GitHub.

@@ -54,6 +54,8 @@ That command:
 - runs the React tests
 - runs the Electron unit tests, including a live check that health requires the session token and that shutdown closes the port
 
+Pull requests run `.github/workflows/ci.yml`. The backend job builds and tests the Java project. The frontend job typechecks, builds, and tests the React app. The Electron job typechecks, bundles, and tests the shell, including its live backend check.
+
 `npm run smoke` opens the built app, waits until the status pill reads `CORE ONLINE`, checks that both panels say they are not connected to AI, saves a screenshot under the OS temp directory as `jarvis-milestone1.png`, and exits. On this machine that file is `%TEMP%\jarvis-milestone1.png`.
 
 `npm run typecheck` checks the TypeScript projects without launching Java.
