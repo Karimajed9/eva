@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { act } from "react";
 import { describe, expect, it } from "vitest";
 import type { BackendStatus } from "../../shared/contract";
@@ -17,6 +17,13 @@ const online: BackendStatus = {
 };
 
 describe("EVA interface", () => {
+  it("labels the center of the HUD EVA", () => {
+    render(<App />);
+    const stage = screen.getByRole("region", { name: "Assistant" });
+    expect(within(stage).getByText("EVA")).toBeInTheDocument();
+    expect(stage).not.toHaveTextContent(/jarvis/i);
+  });
+
   it("identifies both panels as not connected to AI", () => {
     render(<App />);
     expect(screen.getByTestId("conversation-panel")).toHaveTextContent(/not connected to ai/i);
