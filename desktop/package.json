@@ -1,0 +1,22 @@
+{
+  "name": "@eva/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secure Electron shell for EVA.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/launch.mjs development",
+    "start": "node scripts/launch.mjs production",
+    "smoke": "node scripts/launch.mjs smoke",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "electron": "45.4.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.1"
+  }
+}

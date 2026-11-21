@@ -1,0 +1,24 @@
+# The listen address is forced to loopback in LoopbackBindingConfig.
+# The session token is read from the process environment and then removed
+# from Spring's property sources. Do not add it to this file.
+server:
+  port: ${EVA_BACKEND_PORT:17341}
+  server-header: eva
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+
+spring:
+  main:
+    banner-mode: console
+  web:
+    resources:
+      add-mappings: false
+
+logging:
+  level:
+    root: INFO

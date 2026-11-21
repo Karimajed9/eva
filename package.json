@@ -1,0 +1,25 @@
+{
+  "name": "eva",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Privacy-first AI desktop assistant.",
+  "workspaces": [
+    "frontend",
+    "desktop"
+  ],
+  "scripts": {
+    "dev": "npm run build --prefix backend && npm run build --prefix desktop && concurrently -k -n web,app -c cyan,magenta \"npm run dev --prefix frontend\" \"wait-on http://127.0.0.1:5173 && npm run dev --prefix desktop\"",
+    "build": "npm run build --prefix frontend && npm run build --prefix desktop && npm run build --prefix backend",
+    "test": "npm run build --prefix backend && npm test --prefix frontend && npm test --prefix desktop",
+    "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix desktop",
+    "start": "npm run build && node desktop/scripts/launch.mjs production",
+    "smoke": "npm run build && node desktop/scripts/launch.mjs smoke"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.7",
+    "wait-on": "9.5.1"
+  }
+}

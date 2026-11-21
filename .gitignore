@@ -1,0 +1,56 @@
+# Dependencies and builds
+node_modules/
+dist/
+dist-ssr/
+out/
+release/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Java
+target/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# Secrets and local environment
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+*.mv.db
+
+# Logs and local runtime
+*.log
+npm-debug.log*
+*.pid
+eva-smoke-result.json
+backend-runtime.json
+.eva/
+
+# Editors and OS
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+.DS_Store
+Thumbs.db
+desktop.ini
