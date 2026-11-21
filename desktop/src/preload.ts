@@ -7,7 +7,7 @@ import {
   type BackendStatus,
 } from "../../shared/contract";
 
-const jarvis = {
+const eva = {
   async getBackendStatus(): Promise<BackendStatus> {
     const parsed = parseBackendStatus(await ipcRenderer.invoke(IpcChannel.getStatus));
     if (!parsed) {
@@ -39,4 +39,4 @@ const jarvis = {
   },
 };
 
-contextBridge.exposeInMainWorld("jarvis", jarvis);
+contextBridge.exposeInMainWorld("eva", eva);

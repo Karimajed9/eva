@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.shutdown;
+package dev.karimajed.eva.shutdown;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.boot.SpringApplication;
@@ -27,7 +27,7 @@ public class SpringShutdownTrigger implements ShutdownTrigger {
                 Thread.currentThread().interrupt();
             }
             SpringApplication.exit(applicationContext, () -> 0);
-        }, "jarvis-shutdown");
+        }, "eva-shutdown");
         thread.setDaemon(true);
         thread.start();
     }

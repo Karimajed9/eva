@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.shutdown;
+package dev.karimajed.eva.shutdown;
 
 import java.util.Map;
 import org.springframework.http.MediaType;

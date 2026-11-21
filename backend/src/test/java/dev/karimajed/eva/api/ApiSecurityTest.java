@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.api;
+package dev.karimajed.eva.api;
 
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import dev.karimajed.jarvis.shutdown.ShutdownTrigger;
-import dev.karimajed.jarvis.support.TestTokens;
+import dev.karimajed.eva.shutdown.ShutdownTrigger;
+import dev.karimajed.eva.support.TestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,7 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
-        "jarvis.session-token=" + TestTokens.SESSION,
+        "eva.session-token=" + TestTokens.SESSION,
         "logging.level.root=WARN"
 })
 @AutoConfigureMockMvc
@@ -37,7 +37,7 @@ class ApiSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("UP"))
-                .andExpect(jsonPath("$.service").value("jarvis-backend"))
+                .andExpect(jsonPath("$.service").value("eva-backend"))
                 .andExpect(jsonPath("$.version").value("0.1.0"))
                 .andExpect(jsonPath("$.timestamp").exists());
     }

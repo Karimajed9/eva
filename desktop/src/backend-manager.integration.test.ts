@@ -28,7 +28,7 @@ describe("backend process", () => {
     const status = manager.getStatus();
     const port = manager.endpointPort();
     expect(status.state).toBe("up");
-    expect(status.health?.service).toBe("jarvis-backend");
+    expect(status.health?.service).toBe("eva-backend");
     expect(status.health?.status).toBe("UP");
     expect(port).toBeTypeOf("number");
 
@@ -57,7 +57,7 @@ describe("backend process", () => {
 
   it("reports down when the core process exits", async () => {
     expect(jarPath).toBeTruthy();
-    const runtimeFilePath = path.join(os.tmpdir(), `jarvis-runtime-${process.pid}-crash.json`);
+    const runtimeFilePath = path.join(os.tmpdir(), `eva-runtime-${process.pid}-crash.json`);
     const manager = new BackendManager({
       jarPath: jarPath as string,
       runtimeFilePath,
@@ -78,7 +78,7 @@ describe("backend process", () => {
 
   it("stops a core that exits during startup", async () => {
     const manager = new BackendManager({
-      jarPath: path.join(os.tmpdir(), "jarvis-missing-backend.jar"),
+      jarPath: path.join(os.tmpdir(), "eva-missing-backend.jar"),
       log: () => undefined,
     });
     managers.push(manager);

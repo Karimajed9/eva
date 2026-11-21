@@ -38,7 +38,7 @@ export async function createMainWindow(options: ShellWindowOptions): Promise<Bro
     show: false,
     backgroundColor: "#04060c",
     autoHideMenuBar: true,
-    title: "JARVIS",
+    title: "EVA",
     webPreferences: {
       preload: options.preloadPath,
       contextIsolation: true,
@@ -78,10 +78,10 @@ export async function createMainWindow(options: ShellWindowOptions): Promise<Bro
     event.preventDefault();
   });
   window.webContents.on("render-process-gone", (_event, details) => {
-    console.error(`[jarvis] renderer exited: ${details.reason}`);
+    console.error(`[eva] renderer exited: ${details.reason}`);
   });
   window.webContents.on("preload-error", (_event, preloadPath, error) => {
-    console.error(`[jarvis] preload failed (${preloadPath}): ${error.message}`);
+    console.error(`[eva] preload failed (${preloadPath}): ${error.message}`);
   });
   window.webContents.on("console-message", (event) => {
     if (event.level === "warning" || event.level === "error") {
@@ -89,7 +89,7 @@ export async function createMainWindow(options: ShellWindowOptions): Promise<Bro
     }
   });
   window.webContents.on("did-fail-load", (_event, code, description, url) => {
-    console.error(`[jarvis] failed to load ${url}: ${code} ${description}`);
+    console.error(`[eva] failed to load ${url}: ${code} ${description}`);
   });
 
   if (options.dev) {

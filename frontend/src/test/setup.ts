@@ -4,5 +4,5 @@ import { afterEach } from "vitest";
 
 afterEach(() => {
   cleanup();
-  delete window.jarvis;
+  delete window.eva;
 });

@@ -34,7 +34,7 @@ export function shouldReapCommandLine(commandLine: string): boolean {
   if (normalized.includes("surefire") || normalized.includes("maven") || normalized.includes("mvn")) {
     return false;
   }
-  return normalized.includes("jarvis-backend-") && normalized.includes(".jar");
+  return normalized.includes("eva-backend-") && normalized.includes(".jar");
 }
 
 export async function readRuntimeRecord(filePath: string): Promise<RuntimeRecord | null> {

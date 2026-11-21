@@ -9,7 +9,7 @@ import {
 
 const health = {
   status: "UP",
-  service: "jarvis-backend",
+  service: "eva-backend",
   version: "0.1.0",
   timestamp: "2026-11-19T04:00:00.000Z",
 };
@@ -51,8 +51,8 @@ describe("parseBackendStatus", () => {
 
 describe("parseAppInfo", () => {
   it("accepts the shell identity", () => {
-    expect(parseAppInfo({ name: "JARVIS", version: "0.1.0", platform: "win32" })).toEqual({
-      name: "JARVIS",
+    expect(parseAppInfo({ name: "EVA", version: "0.1.0", platform: "win32" })).toEqual({
+      name: "EVA",
       version: "0.1.0",
       platform: "win32",
     });
@@ -60,7 +60,7 @@ describe("parseAppInfo", () => {
 
   it("rejects unexpected identities", () => {
     expect(parseAppInfo({ name: "Other", version: "0.1.0", platform: "win32" })).toBeNull();
-    expect(parseAppInfo({ name: "JARVIS", version: "0.1.0", platform: "../win" })).toBeNull();
+    expect(parseAppInfo({ name: "EVA", version: "0.1.0", platform: "../win" })).toBeNull();
   });
 });
 
@@ -79,9 +79,9 @@ describe("loopbackUrl", () => {
 describe("IpcChannel", () => {
   it("exposes a fixed three-call bridge", () => {
     expect(Object.values(IpcChannel)).toEqual([
-      "jarvis:backend:get-status",
-      "jarvis:backend:status",
-      "jarvis:app:get-info",
+      "eva:backend:get-status",
+      "eva:backend:status",
+      "eva:app:get-info",
     ]);
   });
 });

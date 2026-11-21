@@ -1,8 +1,8 @@
 {
-  "name": "@jarvis/desktop",
+  "name": "@eva/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Secure Electron shell for JARVIS.",
+  "description": "Secure Electron shell for EVA.",
   "main": "dist/main.js",
   "scripts": {
     "build": "node scripts/build.mjs",

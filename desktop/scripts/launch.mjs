@@ -13,17 +13,17 @@ const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 
 if (mode === "development") {
-  env.JARVIS_MODE = "development";
-  env.JARVIS_RENDERER_URL = "http://127.0.0.1:5173";
+  env.EVA_MODE = "development";
+  env.EVA_RENDERER_URL = "http://127.0.0.1:5173";
 } else {
-  env.JARVIS_MODE = "production";
-  delete env.JARVIS_RENDERER_URL;
+  env.EVA_MODE = "production";
+  delete env.EVA_RENDERER_URL;
 }
 
 if (smoke) {
-  env.JARVIS_SMOKE = "1";
+  env.EVA_SMOKE = "1";
 } else {
-  delete env.JARVIS_SMOKE;
+  delete env.EVA_SMOKE;
 }
 
 const child = spawn(electronPath, ["."], {

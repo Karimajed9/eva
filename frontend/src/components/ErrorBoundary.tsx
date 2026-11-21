@@ -16,14 +16,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error("[jarvis] interface error", error.message, info.componentStack);
+    console.error("[eva] interface error", error.message, info.componentStack);
   }
 
   render() {
     if (this.state.failed) {
       return (
         <div className="failure" role="alert">
-          <p>The interface hit an unexpected error. Restart JARVIS.</p>
+          <p>The interface hit an unexpected error. Restart EVA.</p>
         </div>
       );
     }

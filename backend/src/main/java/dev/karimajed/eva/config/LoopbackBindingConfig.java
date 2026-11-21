@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.config;
+package dev.karimajed.eva.config;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -25,7 +25,7 @@ public class LoopbackBindingConfig {
             } catch (UnknownHostException exception) {
                 throw new IllegalStateException("IPv4 loopback address is unavailable.", exception);
             }
-            factory.setServerHeader("jarvis");
+            factory.setServerHeader("eva");
         };
     }
 }

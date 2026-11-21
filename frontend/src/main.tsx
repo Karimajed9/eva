@@ -10,7 +10,7 @@ import "./index.css";
 
 const root = document.getElementById("root");
 if (!root) {
-  throw new Error("JARVIS could not find its root element.");
+  throw new Error("EVA could not find its root element.");
 }
 
 createRoot(root).render(

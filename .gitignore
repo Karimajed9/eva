@@ -40,9 +40,9 @@ credentials.json
 *.log
 npm-debug.log*
 *.pid
-jarvis-smoke-result.json
+eva-smoke-result.json
 backend-runtime.json
-.jarvis/
+.eva/
 
 # Editors and OS
 .idea/

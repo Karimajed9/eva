@@ -1,6 +1,6 @@
 # Architecture
 
-JARVIS Milestone 1 is a local desktop shell. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Nothing in this milestone calls a model, microphone, mailbox, or external API.
+EVA Milestone 1 is a local desktop shell. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Nothing in this milestone calls a model, microphone, mailbox, or external API.
 
 ```mermaid
 flowchart LR
@@ -16,7 +16,7 @@ flowchart LR
 | Electron main | Create the window, start and stop Java, hold the session token | Expose a general-purpose IPC or shell bridge |
 | Java backend | Answer health checks and shut down when asked | Listen on a non-loopback address |
 
-The renderer is loaded with `contextIsolation`, `sandbox`, and `nodeIntegration: false`. The preload script exposes one object, `window.jarvis`, with three operations:
+The renderer is loaded with `contextIsolation`, `sandbox`, and `nodeIntegration: false`. The preload script exposes one object, `window.eva`, with three operations:
 
 - `getBackendStatus()`
 - `subscribeBackendStatus(listener)`
@@ -38,21 +38,21 @@ The core is a Spring Boot 4 application on Java 21. It has two routes:
 - a `POST` with an `Origin` header is rejected, which blocks browser cross-site calls
 - `Authorization: Bearer …` must match the session token
 
-The comparison hashes both strings with SHA-256 and uses `MessageDigest.isEqual`. The token is never written into source, logs, or the runtime pid file. Electron generates 32 random bytes at launch and passes them only in the child process environment, not on the command line. Before the application context refreshes, the backend copies that value onto the session bean, removes it from Spring's property sources, and arms a log filter. Debug and trace logs do not print the token, and `jarvis.session-token` no longer resolves from the environment.
+The comparison hashes both strings with SHA-256 and uses `MessageDigest.isEqual`. The token is never written into source, logs, or the runtime pid file. Electron generates 32 random bytes at launch and passes them only in the child process environment, not on the command line. Before the application context refreshes, the backend copies that value onto the session bean, removes it from Spring's property sources, and arms a log filter. Debug and trace logs do not print the token, and `eva.session-token` no longer resolves from the environment.
 
-The process refuses to start when `JARVIS_SESSION_TOKEN` is missing, shorter than 32 characters, or contains whitespace.
+The process refuses to start when `EVA_SESSION_TOKEN` is missing, shorter than 32 characters, or contains whitespace.
 
 ## Startup and shutdown
 
 1. Electron takes a single-instance lock.
 2. It resolves `java` from `JAVA_HOME` or `PATH` and requires major version 21 or newer.
-3. It locates `backend/target/jarvis-backend-0.1.0.jar`.
+3. It locates `backend/target/eva-backend-0.1.0.jar`.
 4. It chooses a free loopback port and starts `java -jar` with `--server.port`.
 5. It polls `GET /api/health` until the contract matches, the process exits, or 45 seconds pass.
 6. The window is shown as soon as it is ready. Status changes are pushed to the renderer.
 7. Closing the window calls `POST /api/shutdown`, waits for the process to exit, and kills it if it is still alive. On Windows a process that survives that kill is ended with `taskkill`. Quitting during startup, and a fatal error in the shell, use the same shutdown. If the core exits on its own, the shell reports the connection as down and stops polling.
 
-A pid file in the temp directory records the backend pid and port, never the token. On the next launch JARVIS stops a previous process only when that pid's command line contains the backend jar name.
+A pid file in the temp directory records the backend pid and port, never the token. On the next launch EVA stops a previous process only when that pid's command line contains the backend jar name.
 
 ## Interface
 

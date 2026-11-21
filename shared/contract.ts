@@ -1,10 +1,10 @@
-export const SERVICE_NAME = "jarvis-backend";
-export const SHELL_NAME = "JARVIS";
+export const SERVICE_NAME = "eva-backend";
+export const SHELL_NAME = "EVA";
 
 export const IpcChannel = {
-  getStatus: "jarvis:backend:get-status",
-  statusEvent: "jarvis:backend:status",
-  getAppInfo: "jarvis:app:get-info",
+  getStatus: "eva:backend:get-status",
+  statusEvent: "eva:backend:status",
+  getAppInfo: "eva:app:get-info",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];

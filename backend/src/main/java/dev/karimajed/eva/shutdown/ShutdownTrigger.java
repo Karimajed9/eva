@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.shutdown;
+package dev.karimajed.eva.shutdown;
 
 public interface ShutdownTrigger {
 

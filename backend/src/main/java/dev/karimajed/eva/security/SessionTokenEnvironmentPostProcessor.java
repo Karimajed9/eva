@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.security;
+package dev.karimajed.eva.security;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -101,7 +101,7 @@ public class SessionTokenEnvironmentPostProcessor implements EnvironmentPostProc
 
     static boolean isSecretKey(String key) {
         String normalized = key.toLowerCase(Locale.ROOT).replace('-', '.').replace('_', '.');
-        return "jarvis.session.token".equals(normalized);
+        return "eva.session.token".equals(normalized);
     }
 
     private static final class HiddenSecretSource extends EnumerablePropertySource<EnumerablePropertySource<?>> {

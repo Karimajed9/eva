@@ -1,10 +1,10 @@
-package dev.karimajed.jarvis.api;
+package dev.karimajed.eva.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import dev.karimajed.jarvis.support.TestTokens;
+import dev.karimajed.eva.support.TestTokens;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -29,7 +29,7 @@ import org.springframework.boot.web.server.servlet.context.ServletWebServerAppli
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
-                "jarvis.session-token=" + TestTokens.SESSION,
+                "eva.session-token=" + TestTokens.SESSION,
                 "server.address=0.0.0.0",
                 "logging.level.root=WARN"
         })
@@ -57,7 +57,7 @@ class ServerBindingTest {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("\"service\":\"jarvis-backend\""));
+        assertTrue(response.body().contains("\"service\":\"eva-backend\""));
 
         Optional<InetAddress> siteAddress = siteLocalAddress();
         if (siteAddress.isEmpty()) {

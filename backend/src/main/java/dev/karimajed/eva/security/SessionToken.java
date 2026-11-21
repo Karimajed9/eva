@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.security;
+package dev.karimajed.eva.security;
 
 public record SessionToken(String value) {
 
@@ -7,10 +7,10 @@ public record SessionToken(String value) {
     public SessionToken {
         if (value == null || value.length() < MINIMUM_LENGTH) {
             throw new IllegalStateException(
-                    "JARVIS_SESSION_TOKEN must be provided and at least " + MINIMUM_LENGTH + " characters.");
+                    "EVA_SESSION_TOKEN must be provided and at least " + MINIMUM_LENGTH + " characters.");
         }
         if (value.chars().anyMatch(Character::isWhitespace)) {
-            throw new IllegalStateException("JARVIS_SESSION_TOKEN must not contain whitespace.");
+            throw new IllegalStateException("EVA_SESSION_TOKEN must not contain whitespace.");
         }
     }
 }

@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.security;
+package dev.karimajed.eva.security;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

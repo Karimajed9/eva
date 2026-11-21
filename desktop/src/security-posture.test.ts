@@ -15,7 +15,7 @@ describe("security posture", () => {
   });
 
   it("does not expose a generic IPC bridge", () => {
-    expect(preload).toContain("contextBridge.exposeInMainWorld(\"jarvis\"");
+    expect(preload).toContain("contextBridge.exposeInMainWorld(\"eva\"");
     expect(preload).not.toContain("ipcRenderer.send");
     expect(preload).not.toContain("exposeInMainWorld(\"ipcRenderer\"");
     expect(main).not.toContain("nodeIntegration: true");

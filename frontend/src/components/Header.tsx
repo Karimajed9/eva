@@ -12,7 +12,7 @@ export function Header({ status, platform }: HeaderProps) {
     <header className={`topbar drag ${pad}`}>
       <div className="brand">
         <span className="mark" aria-hidden="true" />
-        <span className="wordmark">JARVIS</span>
+        <span className="wordmark">EVA</span>
       </div>
       <p className="privacy">Local session · Private</p>
       <div

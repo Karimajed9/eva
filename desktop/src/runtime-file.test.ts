@@ -16,10 +16,10 @@ describe("runtime records", () => {
     expect(parseRuntimeRecord({ pid: 4, port: 80, createdAt: "nope" })).toBeNull();
   });
 
-  it("reaps only a confirmed JARVIS backend process", () => {
-    expect(shouldReapCommandLine("java -jar C:\\apps\\jarvis-backend-0.1.0.jar --server.port=1")).toBe(true);
+  it("reaps only a confirmed EVA backend process", () => {
+    expect(shouldReapCommandLine("java -jar C:\\apps\\eva-backend-0.1.0.jar --server.port=1")).toBe(true);
     expect(shouldReapCommandLine("java -jar some-other-app.jar")).toBe(false);
-    expect(shouldReapCommandLine("mvn -q test jarvis-backend-0.1.0.jar")).toBe(false);
+    expect(shouldReapCommandLine("mvn -q test eva-backend-0.1.0.jar")).toBe(false);
     expect(shouldReapCommandLine("")).toBe(false);
   });
 });

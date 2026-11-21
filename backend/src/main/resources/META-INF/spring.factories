@@ -1,2 +1,2 @@
 org.springframework.boot.EnvironmentPostProcessor=\
-dev.karimajed.jarvis.security.SessionTokenEnvironmentPostProcessor
+dev.karimajed.eva.security.SessionTokenEnvironmentPostProcessor

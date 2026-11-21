@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.security;
+package dev.karimajed.eva.security;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;

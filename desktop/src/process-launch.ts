@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 
-const JAR_NAME = "jarvis-backend-0.1.0.jar";
+const JAR_NAME = "eva-backend-0.1.0.jar";
 
 export function resolveJavaExecutable(env: NodeJS.ProcessEnv = process.env): string {
   const home = env.JAVA_HOME;
@@ -84,7 +84,7 @@ export async function assertJava21(javaPath: string): Promise<void> {
     throw new Error("The installed Java version could not be read.");
   }
   if (major < 21) {
-    throw new Error(`Java ${major} is too old. JARVIS needs Java 21 or newer.`);
+    throw new Error(`Java ${major} is too old. EVA needs Java 21 or newer.`);
   }
 }
 

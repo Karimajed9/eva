@@ -1,4 +1,4 @@
-package dev.karimajed.jarvis.health;
+package dev.karimajed.eva.health;
 
 import java.time.Instant;
 import org.springframework.beans.factory.ObjectProvider;
@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class HealthController {
 
-    static final String SERVICE_NAME = "jarvis-backend";
+    static final String SERVICE_NAME = "eva-backend";
     static final String FALLBACK_VERSION = "0.1.0";
 
     private final BuildProperties buildProperties;

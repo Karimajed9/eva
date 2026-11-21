@@ -2,8 +2,8 @@
 # The session token is read from the process environment and then removed
 # from Spring's property sources. Do not add it to this file.
 server:
-  port: ${JARVIS_BACKEND_PORT:17341}
-  server-header: jarvis
+  port: ${EVA_BACKEND_PORT:17341}
+  server-header: eva
   error:
     include-message: never
     include-stacktrace: never

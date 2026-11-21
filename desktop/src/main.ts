@@ -10,9 +10,9 @@ import { resolveBackendJar } from "./process-launch";
 import { redactSecrets } from "./redact";
 import { createMainWindow, hardenSession, installNavigationGuards, rendererFilePath } from "./window";
 
-const dev = process.env.JARVIS_MODE === "development";
-const smoke = process.env.JARVIS_SMOKE === "1";
-const rendererUrl = process.env.JARVIS_RENDERER_URL ?? "http://127.0.0.1:5173";
+const dev = process.env.EVA_MODE === "development";
+const smoke = process.env.EVA_SMOKE === "1";
+const rendererUrl = process.env.EVA_RENDERER_URL ?? "http://127.0.0.1:5173";
 
 let manager: BackendManager | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -30,7 +30,7 @@ function shellVersion(): string {
 
 function reportFatal(error: unknown): void {
   const message = error instanceof Error ? (error.stack ?? error.message) : "unknown failure";
-  console.error(`[jarvis] ${redactSecrets(message, [])}`);
+  console.error(`[eva] ${redactSecrets(message, [])}`);
   if (shuttingDown) {
     return;
   }
@@ -67,7 +67,7 @@ async function bootstrap(): Promise<void> {
   const jarPath = resolveBackendJar([__dirname, process.cwd(), path.resolve(__dirname, "..")]);
   if (!jarPath) {
     dialog.showErrorBox(
-      "JARVIS",
+      "EVA",
       "The backend build was not found. From the repository root, run npm run build.",
     );
     app.exit(1);
@@ -99,7 +99,7 @@ async function bootstrap(): Promise<void> {
       rendererFile: rendererFilePath(),
     });
   } catch (error) {
-    dialog.showErrorBox("JARVIS", error instanceof Error ? error.message : "The window failed to open.");
+    dialog.showErrorBox("EVA", error instanceof Error ? error.message : "The window failed to open.");
     app.exit(1);
     return;
   }
@@ -114,7 +114,7 @@ async function bootstrap(): Promise<void> {
 
   void manager.start().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : "The local core failed to start.";
-    console.error(`[jarvis] ${redactSecrets(message, [])}`);
+    console.error(`[eva] ${redactSecrets(message, [])}`);
     broadcastStatus();
   });
 }
@@ -154,11 +154,11 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
   try {
     window.setBounds({ x: 40, y: 40, width: 1280, height: 820 });
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const shot = path.join(os.tmpdir(), "jarvis-milestone1.png");
+    const shot = path.join(os.tmpdir(), "eva-milestone1.png");
     await writeFile(shot, (await window.capturePage()).toPNG());
     console.log(`screenshot ${shot}`);
   } catch (error) {
-    console.error(`[jarvis] screenshot failed: ${error instanceof Error ? error.message : "unknown"}`);
+    console.error(`[eva] screenshot failed: ${error instanceof Error ? error.message : "unknown"}`);
   }
   console.log(JSON.stringify({ smoke: ok, detail }));
   await manager?.stop();
@@ -207,8 +207,8 @@ if (!gotLock) {
   });
 
   app.whenReady().then(bootstrap).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : "JARVIS failed to start.";
-    dialog.showErrorBox("JARVIS", message);
+    const message = error instanceof Error ? error.message : "EVA failed to start.";
+    dialog.showErrorBox("EVA", message);
     app.exit(1);
   });
 }

@@ -48,7 +48,7 @@ export class BackendManager {
 
   constructor(private readonly options: BackendManagerOptions) {
     this.runtimeFilePath = options.runtimeFilePath
-      ?? path.join(os.tmpdir(), "jarvis", "backend-runtime.json");
+      ?? path.join(os.tmpdir(), "eva", "backend-runtime.json");
   }
 
   getStatus(): BackendStatus {
@@ -108,8 +108,8 @@ export class BackendManager {
     const child = spawn(javaPath, ["-jar", this.options.jarPath, `--server.port=${port}`], {
       env: {
         ...process.env,
-        JARVIS_SESSION_TOKEN: this.token,
-        JARVIS_BACKEND_PORT: String(port),
+        EVA_SESSION_TOKEN: this.token,
+        EVA_BACKEND_PORT: String(port),
       },
       windowsHide: true,
       shell: false,
