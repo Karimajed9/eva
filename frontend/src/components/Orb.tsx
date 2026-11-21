@@ -19,6 +19,11 @@ export function Orb({ state }: OrbProps) {
       transition={{ duration: 0.8, ease: "easeOut" }}
     >
       <div className="orb-glow" />
+      <div className="ticks" aria-hidden="true" />
+      <svg className="reticle" viewBox="0 0 200 200" aria-hidden="true">
+        <path d="M100 4 v18 M100 178 v18 M4 100 h18 M178 100 h18" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square" />
+        <circle cx="100" cy="100" r="70" fill="none" stroke="currentColor" strokeWidth="0.6" strokeOpacity="0.35" />
+      </svg>
       <svg className="ring" viewBox="0 0 200 200" aria-hidden="true">
         <circle cx="100" cy="100" r="94" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2 7" />
         <circle cx="100" cy="100" r="78" fill="none" stroke="currentColor" strokeWidth="1.4" strokeDasharray="42 16 10 16" strokeLinecap="round" />
