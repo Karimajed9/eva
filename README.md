@@ -1,6 +1,6 @@
 # EVA
 
-Privacy-first AI desktop assistant. This repository is Milestone 1: the desktop foundation.
+EVA (Electronic Virtual Assistant) is a privacy-first AI desktop assistant. This repository is Milestone 1: the desktop foundation.
 
 The app opens a local window, starts a Java core on `127.0.0.1`, and shows whether that core is actually reachable. The conversation and activity panels are on screen and are explicitly **not connected to AI**. There is no model call, API key, voice capture, mailbox, memory store, or computer automation in this milestone.
 

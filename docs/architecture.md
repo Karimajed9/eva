@@ -1,6 +1,6 @@
 # Architecture
 
-EVA Milestone 1 is a local desktop shell. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Nothing in this milestone calls a model, microphone, mailbox, or external API.
+EVA (Electronic Virtual Assistant), Milestone 1, is a local desktop shell. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Nothing in this milestone calls a model, microphone, mailbox, or external API.
 
 ```mermaid
 flowchart LR
