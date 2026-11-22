@@ -64,7 +64,7 @@ Pull requests run `.github/workflows/ci.yml`. The backend job builds and tests t
 
 - A dark HUD with the same orb. Its conversation phase is `idle`, `processing`, `responding`, or `error`. That is not a voice animation.
 - A connection pill driven by `GET /api/health`. `CORE ONLINE` means the Java process answered with the expected payload. `CONNECTING`, `CORE OFFLINE`, and `CORE ERROR` are the other real states.
-- A conversation panel with user and assistant bubbles, a provider selector, a model selector, a local or cloud stamp, and a new-conversation control. The activity panel still says **Not connected to AI** because computer automation is not enabled.
+- A conversation panel with user and assistant bubbles, a provider selector, a model selector, a local or cloud stamp, and a new-conversation control. Enter sends the message. Shift+Enter inserts a newline and does not send. The activity panel still says **Not connected to AI** because computer automation is not enabled.
 - If Ollama is not running, the local provider is marked disconnected and EVA does not send the message. It also does not download a model.
 - If you open the Vite URL in a normal browser, the pill reports that the desktop bridge is unavailable. The session token and any API key never enter the page, so the browser cannot call the core.
 
@@ -92,7 +92,7 @@ npm run dev
 
 The key is optional. Without it, OpenAI is listed as not configured and a cloud send fails before any network call. Java removes the key from Spring's configuration and redacts it from logs. React never receives it.
 
-The cloud model list is fixed: GPT-4o mini (`gpt-4o-mini`), GPT-4o (`gpt-4o`), and GPT-4.1 mini (`gpt-4.1-mini`). EVA does not ask OpenAI for a model list. When the API returns token counts, the panel shows those counts and an estimated USD cost from published per-million rates (mini 0.15/0.60, GPT-4o 2.50/10.00, GPT-4.1 mini 0.40/1.60). If usage is missing, no cost is shown. Ollama token counts, when Ollama returns them, have no dollar estimate.
+The cloud model list is fixed: GPT-4o mini (`gpt-4o-mini`), GPT-4o (`gpt-4o`), GPT-4.1 mini (`gpt-4.1-mini`), and GPT-6 Luna (`gpt-6-luna`). EVA does not ask OpenAI for a model list. GPT-6 Luna requests use reasoning effort `none`. The other cloud models are unchanged. GPT-6 Luna was live-tested once through EVA with a real OpenAI key, and that send succeeded. No other OpenAI model has been live-tested. When the API returns token counts, the panel shows those counts and an estimated USD cost from published standard-processing rates per million tokens (mini 0.15/0.60, GPT-4o 2.50/10.00, GPT-4.1 mini 0.40/1.60, GPT-6 Luna 0.10/0.50). Reasoning tokens are included in that estimate when the API reports them separately from the completion count. If usage is missing, no cost is shown. Ollama token counts, when Ollama returns them, have no dollar estimate.
 
 There is no automatic fallback. A local failure stays local. A cloud failure stays an error.
 

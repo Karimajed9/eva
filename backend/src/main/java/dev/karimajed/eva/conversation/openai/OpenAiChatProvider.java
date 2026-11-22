@@ -19,6 +19,8 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiChatRequestParameters;
+import dev.langchain4j.model.openai.OpenAiTokenUsage;
 import dev.langchain4j.model.output.TokenUsage;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -29,15 +31,19 @@ import org.springframework.stereotype.Component;
 @Component
 public class OpenAiChatProvider implements ChatProvider {
 
+    static final String LUNA = "gpt-6-luna";
+
     static final List<ModelChoice> MODELS = List.of(
             new ModelChoice("gpt-4o-mini", "GPT-4o mini"),
             new ModelChoice("gpt-4o", "GPT-4o"),
-            new ModelChoice("gpt-4.1-mini", "GPT-4.1 mini"));
+            new ModelChoice("gpt-4.1-mini", "GPT-4.1 mini"),
+            new ModelChoice(LUNA, "GPT-6 Luna"));
 
     static final Map<String, double[]> ESTIMATE_PER_MILLION = Map.of(
             "gpt-4o-mini", new double[] {0.15, 0.60},
             "gpt-4o", new double[] {2.50, 10.00},
-            "gpt-4.1-mini", new double[] {0.40, 1.60});
+            "gpt-4.1-mini", new double[] {0.40, 1.60},
+            LUNA, new double[] {0.10, 0.50});
 
     private final CloudClient client;
     private final boolean configured;
@@ -131,6 +137,52 @@ public class OpenAiChatProvider implements ChatProvider {
         return new Usage(prompt, completion, usd);
     }
 
+    /**
+     * Completion tokens from the Chat Completions API already include reasoning tokens.
+     * When the reported reasoning count is larger than the completion count, the reasoning
+     * tokens were reported separately and are added so the estimate bills them.
+     */
+    static Integer billedCompletionTokens(TokenUsage usage) {
+        if (usage == null) {
+            return null;
+        }
+        Integer completion = usage.outputTokenCount();
+        Integer reasoning = reasoningTokens(usage);
+        if (reasoning == null) {
+            return completion;
+        }
+        int visible = completion == null ? 0 : completion;
+        if (reasoning > visible) {
+            return visible + reasoning;
+        }
+        return completion == null ? reasoning : completion;
+    }
+
+    private static Integer reasoningTokens(TokenUsage usage) {
+        if (!(usage instanceof OpenAiTokenUsage openAi) || openAi.outputTokensDetails() == null) {
+            return null;
+        }
+        return openAi.outputTokensDetails().reasoningTokens();
+    }
+
+    static OpenAiChatModel chatModel(String apiKey, String model) {
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
+                .apiKey(apiKey)
+                .modelName(model)
+                .timeout(Duration.ofSeconds(45))
+                .maxRetries(0)
+                .logRequests(false)
+                .logResponses(false);
+        if (LUNA.equals(model)) {
+            builder.reasoningEffort("none");
+        }
+        return builder.build();
+    }
+
+    static OpenAiChatRequestParameters requestParameters(OpenAiChatModel model, ChatRequest request) {
+        return (OpenAiChatRequestParameters) model.defaultRequestParameters().overrideWith(request.parameters());
+    }
+
     static String safeFailure(RuntimeException exception) {
         return "OpenAI did not complete the reply.";
     }
@@ -155,14 +207,7 @@ public class OpenAiChatProvider implements ChatProvider {
             if (cancel.isCancelled()) {
                 throw new ConversationException("cancelled", 409, "The reply was cancelled.");
             }
-            ChatModel chat = OpenAiChatModel.builder()
-                    .apiKey(apiKey)
-                    .modelName(model)
-                    .timeout(Duration.ofSeconds(45))
-                    .maxRetries(0)
-                    .logRequests(false)
-                    .logResponses(false)
-                    .build();
+            ChatModel chat = chatModel(apiKey, model);
             ChatResponse response = chat.chat(ChatRequest.builder().messages(messages).build());
             if (cancel.isCancelled()) {
                 throw new ConversationException("cancelled", 409, "The reply was cancelled.");
@@ -170,7 +215,7 @@ public class OpenAiChatProvider implements ChatProvider {
             TokenUsage usage = response.tokenUsage();
             String text = response.aiMessage() == null ? "" : response.aiMessage().text();
             Integer prompt = usage == null ? null : usage.inputTokenCount();
-            Integer completion = usage == null ? null : usage.outputTokenCount();
+            Integer completion = billedCompletionTokens(usage);
             return new CloudResult(text, prompt, completion);
         }
     }

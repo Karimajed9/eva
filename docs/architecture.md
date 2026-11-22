@@ -56,7 +56,7 @@ The process refuses to start when `EVA_SESSION_TOKEN` is missing, shorter than 3
 
 `EVA_OPENAI_API_KEY` is optional. When it is present, the same startup step copies it onto a credential bean, removes it from Spring's property sources, and arms the log filter for values of at least 16 characters. Provider errors return a fixed detail string. Exception text from the cloud SDK is not copied into the response, because that text can contain request data.
 
-Ollama's base URL is `EVA_OLLAMA_BASE_URL`, defaulting to `http://127.0.0.1:11434`. It must be an `http` loopback URL with no user info and no path. Discovery is `GET /api/tags` with an 800 millisecond timeout. Chat is `POST /api/chat` with `stream` set to false and a 90 second timeout. EVA never calls `/api/pull`. OpenAI uses LangChain4j `OpenAiChatModel` with a 45 second timeout, `maxRetries` of 0, and request and response logging off. The cloud model list is a static allowlist, so describing OpenAI does not contact the network.
+Ollama's base URL is `EVA_OLLAMA_BASE_URL`, defaulting to `http://127.0.0.1:11434`. It must be an `http` loopback URL with no user info and no path. Discovery is `GET /api/tags` with an 800 millisecond timeout. Chat is `POST /api/chat` with `stream` set to false and a 90 second timeout. EVA never calls `/api/pull`. OpenAI uses LangChain4j `OpenAiChatModel` with a 45 second timeout, `maxRetries` of 0, and request and response logging off. The cloud model list is a static allowlist (`gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, and `gpt-6-luna`), so describing OpenAI does not contact the network. GPT-6 Luna is requested with reasoning effort `none`. The other allowlisted models do not set a reasoning effort. Cost estimates use the completion token count, and add reported reasoning tokens only when that count is larger than the completion count.
 
 ## Startup and shutdown
 
@@ -110,7 +110,7 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 - Replies are not streamed. Cancel is best-effort: the provider may still finish the HTTP call, and EVA then drops the text.
 - Ollama must already be running and the model must already be installed. EVA will not start Ollama or pull a model.
 - OpenAI cost is an estimate from a small rate table, and only when the API returns token counts. It is not an invoice.
-- The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered.
+- The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered. Separately, GPT-6 Luna was live-tested once through EVA with a real OpenAI key, and that send succeeded. No other OpenAI model has been live-tested.
 - If the shell process is terminated without running its quit handlers, the pid file is the recovery path. A reused pid whose command line cannot be confirmed is left alone.
 - There is no installer. `npm start` launches the shell from the source tree.
 - Development builds allow Electron DevTools. Packaged windows disable them.

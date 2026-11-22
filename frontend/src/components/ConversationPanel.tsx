@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ConversationView } from "../hooks/useConversation";
 import { HudPanel } from "./HudPanel";
 
@@ -11,6 +11,7 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
   const reduced = useReducedMotion();
   const [draft, setDraft] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLFormElement>(null);
   const selected = conversation.providers.find((item) => item.id === conversation.provider);
   const models = selected?.models ?? [];
   const cloudBlocked = conversation.provider === "openai" && !conversation.cloudEnabled;
@@ -96,6 +97,7 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
           </p>
         ) : null}
         <form
+          ref={composer}
           className="composer"
           aria-label="Send a message"
           onSubmit={(event) => {
@@ -115,6 +117,7 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
             value={draft}
             disabled={composerDisabled}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => onComposerKeyDown(event, composerDisabled, draft, composer.current)}
           />
           {conversation.phase === "generating"
             ? <button type="button" onClick={conversation.cancel}>Cancel</button>
@@ -123,4 +126,20 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
       </HudPanel>
     </motion.div>
   );
+}
+
+function onComposerKeyDown(
+  event: KeyboardEvent<HTMLTextAreaElement>,
+  composerDisabled: boolean,
+  draft: string,
+  form: HTMLFormElement | null,
+) {
+  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+    return;
+  }
+  event.preventDefault();
+  if (composerDisabled || draft.trim().length === 0) {
+    return;
+  }
+  form?.requestSubmit();
 }

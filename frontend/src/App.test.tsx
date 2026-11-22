@@ -258,6 +258,28 @@ describe("EVA interface", () => {
     expect(screen.queryByText("Too late")).not.toBeInTheDocument();
   });
 
+  it("sends on Enter and keeps Shift+Enter in the message box", async () => {
+    const tracker = installBridge();
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
+    const message = screen.getByLabelText("Message");
+
+    fireEvent.change(message, { target: { value: "  " } });
+    expect(fireEvent.keyDown(message, { key: "Enter" })).toBe(false);
+    expect(tracker.sent).toHaveLength(0);
+
+    fireEvent.change(message, { target: { value: "line one" } });
+    expect(fireEvent.keyDown(message, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(tracker.sent).toHaveLength(0);
+    expect(message).toHaveValue("line one");
+
+    expect(fireEvent.keyDown(message, { key: "Enter" })).toBe(false);
+    expect(await screen.findByText("Hello from EVA.")).toBeInTheDocument();
+    expect(tracker.sent).toHaveLength(1);
+    expect(tracker.sent[0]).toMatchObject({ provider: "ollama", text: "line one" });
+    expect(message).toHaveValue("");
+  });
+
   it("clears the transcript when a new conversation starts", async () => {
     installBridge();
     render(<App />);
