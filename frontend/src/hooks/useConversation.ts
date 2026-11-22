@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  BackendState,
   ConversationCatalog,
   ConversationMessage,
   ConversationProvider,
@@ -30,7 +31,7 @@ export interface ConversationView {
   cancel: () => void;
 }
 
-export function useConversation(): ConversationView {
+export function useConversation(coreState: BackendState): ConversationView {
   const bridge = typeof window !== "undefined" && window.eva ? window.eva : undefined;
   const [phase, setPhase] = useState<PanelPhase>(bridge ? "loading" : "error");
   const [orb, setOrb] = useState<OrbPhase>("idle");
@@ -43,6 +44,7 @@ export function useConversation(): ConversationView {
   const [usage, setUsage] = useState<ConversationUsage | null>(null);
   const generation = useRef(0);
   const sending = useRef(false);
+  const loaded = useRef(false);
   const responding = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function applyCatalog(catalog: ConversationCatalog, selected = provider): void {
@@ -72,18 +74,27 @@ export function useConversation(): ConversationView {
     if (!api) {
       return;
     }
+    if (coreState !== "up" || loaded.current) {
+      if (!loaded.current && coreState !== "up") {
+        setPhase("loading");
+        setOrb("idle");
+        setDetail("Waiting for the local core.");
+      }
+      return;
+    }
     let active = true;
     void api.getConversation().then((result) => {
       if (!active) {
         return;
       }
       if ("ok" in result && result.ok === false) {
-        setPhase("error");
-        setOrb("error");
+        setPhase(result.code === "unavailable" ? "loading" : "error");
+        setOrb(result.code === "unavailable" ? "idle" : "error");
         setDetail(result.detail);
         return;
       }
       if ("providers" in result) {
+        loaded.current = true;
         applyCatalog(result);
       }
     }).catch(() => {
@@ -96,6 +107,11 @@ export function useConversation(): ConversationView {
     });
     return () => {
       active = false;
+    };
+  }, [coreState]);
+
+  useEffect(() => {
+    return () => {
       if (responding.current) {
         clearTimeout(responding.current);
       }

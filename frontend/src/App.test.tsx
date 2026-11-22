@@ -125,6 +125,37 @@ describe("EVA interface", () => {
     expect(screen.getByTestId("connection-status")).toHaveTextContent("CORE ERROR");
   });
 
+  it("does not read the catalog until the core is online", async () => {
+    let push: (status: BackendStatus) => void = () => {};
+    let catalogCalls = 0;
+    window.eva = {
+      getBackendStatus: () => new Promise(() => {}),
+      subscribeBackendStatus: (listener) => {
+        push = listener;
+        return () => {};
+      },
+      getAppInfo: async () => ({ name: "EVA", version: "0.1.0", platform: "win32" }),
+      getConversation: async () => {
+        catalogCalls += 1;
+        return catalog();
+      },
+      sendConversation: async (request) => reply(request),
+      resetConversation: async () => catalog(),
+      cancelConversation: async () => {},
+    };
+
+    render(<App />);
+    expect(screen.getByText(/waiting for the local core/i)).toBeInTheDocument();
+    expect(catalogCalls).toBe(0);
+
+    act(() => {
+      push(online);
+    });
+    expect(await screen.findByText(/local models stay on this machine/i)).toBeInTheDocument();
+    expect(catalogCalls).toBe(1);
+    expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i);
+  });
+
   it("shows the live backend status from the desktop bridge", async () => {
     let push: (status: BackendStatus) => void = () => {};
     installBridge({
@@ -154,7 +185,7 @@ describe("EVA interface", () => {
   it("sends local and cloud messages through the same bridge call", async () => {
     const tracker = installBridge();
     render(<App />);
-    expect(await screen.findByTestId("active-provider")).toHaveTextContent(/local · ollama/i);
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
 
     await sendDraft("Hello locally");
     expect(await screen.findByText("Hello from EVA.")).toBeInTheDocument();
@@ -190,7 +221,7 @@ describe("EVA interface", () => {
       send: async () => ({ ok: false, code: "provider-error", detail: "The model did not answer." }),
     });
     render(<App />);
-    await screen.findByLabelText("Model");
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
     await sendDraft("This will fail");
     expect(await screen.findByText("The model did not answer.")).toBeInTheDocument();
     expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "error");
@@ -216,7 +247,7 @@ describe("EVA interface", () => {
       }),
     });
     render(<App />);
-    await screen.findByLabelText("Model");
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
     await sendDraft("Wait for this");
     expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "processing");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -230,7 +261,7 @@ describe("EVA interface", () => {
   it("clears the transcript when a new conversation starts", async () => {
     installBridge();
     render(<App />);
-    await screen.findByLabelText("Model");
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
     await sendDraft("Remember this");
     expect(await screen.findByText("Remember this")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "New conversation" }));

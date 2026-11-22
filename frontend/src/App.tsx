@@ -7,7 +7,7 @@ import { useAppInfo, useBackendStatus } from "./hooks/useBackendStatus";
 
 export function App() {
   const status = useBackendStatus();
-  const conversation = useConversation();
+  const conversation = useConversation(status.state);
   const appInfo = useAppInfo();
   const platform = appInfo?.platform
     ?? (typeof navigator !== "undefined" && navigator.userAgent.includes("Windows") ? "win32" : "unknown");
