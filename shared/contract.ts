@@ -9,6 +9,7 @@ export const IpcChannel = {
   sendConversation: "eva:conversation:send",
   resetConversation: "eva:conversation:reset",
   cancelConversation: "eva:conversation:cancel",
+  conversationEvent: "eva:conversation:event",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -217,6 +218,17 @@ export interface ConversationFailure {
 export type ConversationResult = ConversationSuccess | ConversationFailure;
 export type CatalogResult = ConversationCatalog | ConversationFailure;
 
+export interface ConversationDelta {
+  type: "delta";
+  seq: number;
+  text: string;
+}
+
+export type ConversationStreamLine =
+  | { kind: "delta"; seq: number; text: string }
+  | { kind: "done"; seq: number; result: ConversationSuccess }
+  | { kind: "error"; seq: number; result: ConversationFailure };
+
 const MODEL_ID = /^[A-Za-z0-9_.:-]{1,80}$/;
 
 function isProvider(value: unknown): value is ConversationProvider {
@@ -392,6 +404,69 @@ export function parseCatalogResult(value: unknown): CatalogResult | null {
     return failure !== null && !failure.ok ? failure : null;
   }
   return parseConversationCatalog(value);
+}
+
+function parseSeq(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 100_000) {
+    return null;
+  }
+  return value;
+}
+
+export function parseConversationDelta(value: unknown): ConversationDelta | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["type", "seq", "text"])) {
+    return null;
+  }
+  const seq = parseSeq(value.seq);
+  if (value.type !== "delta" || seq === null || typeof value.text !== "string" || value.text.length === 0 || value.text.length > 8000) {
+    return null;
+  }
+  return { type: "delta", seq, text: value.text };
+}
+
+export function parseConversationStreamLine(value: unknown): ConversationStreamLine | null {
+  const delta = parseConversationDelta(value);
+  if (delta) {
+    return { kind: "delta", seq: delta.seq, text: delta.text };
+  }
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return null;
+  }
+  const seq = parseSeq(value.seq);
+  if (seq === null) {
+    return null;
+  }
+  if (value.type === "done") {
+    if (!hasExactKeys(value, ["type", "seq", "provider", "model", "text", "usage"])) {
+      return null;
+    }
+    const result = parseConversationResult({
+      ok: true,
+      provider: value.provider,
+      model: value.model,
+      text: value.text,
+      usage: value.usage,
+    });
+    if (!result || !result.ok) {
+      return null;
+    }
+    return { kind: "done", seq, result };
+  }
+  if (value.type === "error") {
+    if (!hasExactKeys(value, ["type", "seq", "code", "detail"])) {
+      return null;
+    }
+    const result = parseConversationResult({
+      ok: false,
+      code: value.code,
+      detail: value.detail,
+    });
+    if (!result || result.ok) {
+      return null;
+    }
+    return { kind: "error", seq, result };
+  }
+  return null;
 }
 
 export function failureFromCore(status: number, body: string): ConversationFailure {

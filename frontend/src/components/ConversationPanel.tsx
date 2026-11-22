@@ -103,9 +103,10 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
           onSubmit={(event) => {
             event.preventDefault();
             const text = draft;
+            setDraft("");
             void conversation.send(text).then((accepted) => {
-              if (accepted) {
-                setDraft("");
+              if (!accepted) {
+                setDraft(text);
               }
             });
           }}

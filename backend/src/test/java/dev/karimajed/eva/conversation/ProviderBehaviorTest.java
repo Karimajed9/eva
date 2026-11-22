@@ -52,14 +52,57 @@ class ProviderBehaviorTest {
         RecordingHttp missing = new RecordingHttp();
         missing.next = new ModelHttp.Response(404, "{\"error\":\"not found\"}");
         OllamaChatProvider provider = new OllamaChatProvider(missing, "http://localhost:11434");
-        ConversationException error = assertThrows(ConversationException.class, () -> provider.complete(
+        ConversationException error = assertThrows(ConversationException.class, () -> provider.stream(
                 List.of(new ChatTurn("user", "Hi")),
                 "missing-model",
                 "You are EVA.",
-                new CancelToken()));
+                new CancelToken(),
+                ignored -> {
+                }));
         assertEquals("model-missing", error.code());
         assertEquals("/api/chat", missing.paths.get(0));
         assertFalse(missing.bodies.get(0).contains("/api/pull"));
+        assertTrue(missing.bodies.get(0).contains("\"stream\":true"));
+    }
+
+    @Test
+    void ollamaStreamsChunksAndKeepsUsageWhenTheStreamFinishes() {
+        RecordingHttp http = new RecordingHttp();
+        http.next = new ModelHttp.Response(200, """
+                {"message":{"content":"He"},"done":false}
+                {"message":{"content":"llo"},"done":false}
+                {"done":true,"prompt_eval_count":4,"eval_count":2}
+                """);
+        List<String> deltas = new ArrayList<>();
+        Reply reply = new OllamaChatProvider(http, "http://127.0.0.1:11434").stream(
+                List.of(new ChatTurn("user", "Hi")),
+                "llama3.2:3b",
+                "You are EVA.",
+                new CancelToken(),
+                deltas::add);
+        assertEquals(List.of("He", "llo"), deltas);
+        assertEquals("Hello", reply.text());
+        assertEquals(4, reply.usage().promptTokens());
+        assertEquals(2, reply.usage().completionTokens());
+        assertNull(reply.usage().estimatedUsd());
+        assertTrue(http.bodies.get(0).contains("\"stream\":true"));
+        assertTrue(http.paths.stream().noneMatch(path -> path.contains("pull")));
+    }
+
+    @Test
+    void ollamaIncompleteStreamDoesNotBecomeAReply() {
+        RecordingHttp http = new RecordingHttp();
+        http.next = new ModelHttp.Response(200, "{\"message\":{\"content\":\"partial-secret-text\"},\"done\":false}\n");
+        OllamaChatProvider provider = new OllamaChatProvider(http, "http://127.0.0.1:11434");
+        ConversationException error = assertThrows(ConversationException.class, () -> provider.stream(
+                List.of(new ChatTurn("user", "Hi")),
+                "llama3.2:3b",
+                "You are EVA.",
+                new CancelToken(),
+                ignored -> {
+                }));
+        assertEquals("provider-error", error.code());
+        assertFalse(error.detail().contains("partial-secret-text"));
     }
 
     @Test
@@ -75,11 +118,13 @@ class ProviderBehaviorTest {
         ProviderStatus status = provider.describe();
         assertFalse(status.configured());
         assertFalse(status.models().isEmpty());
-        ConversationException error = assertThrows(ConversationException.class, () -> provider.complete(
+        ConversationException error = assertThrows(ConversationException.class, () -> provider.stream(
                 List.of(new ChatTurn("user", "Hi")),
                 "gpt-4o-mini",
                 "You are EVA.",
-                new CancelToken()));
+                new CancelToken(),
+                ignored -> {
+                }));
         assertEquals("credentials", error.code());
         assertFalse(error.detail().contains("unit-test-credential"));
     }
@@ -87,16 +132,18 @@ class ProviderBehaviorTest {
     @Test
     void openAiRateLimitIsReportedWithoutTheCredentialAndUsageIsEstimated() {
         AtomicReference<String> seenKey = new AtomicReference<>();
-        OpenAiChatProvider.CloudClient client = (model, messages, cancel) -> {
+        OpenAiChatProvider.CloudClient client = (model, messages, cancel, onDelta) -> {
             seenKey.set("should-not-be-read");
             throw new RateLimitException("rejected unit-test-credential");
         };
         OpenAiChatProvider provider = new OpenAiChatProvider(client, true);
-        ConversationException error = assertThrows(ConversationException.class, () -> provider.complete(
+        ConversationException error = assertThrows(ConversationException.class, () -> provider.stream(
                 List.of(new ChatTurn("user", "Hi")),
                 "gpt-4o-mini",
                 "You are EVA.",
-                new CancelToken()));
+                new CancelToken(),
+                ignored -> {
+                }));
         assertEquals("rate-limited", error.code());
         assertFalse(error.detail().contains("unit-test-credential"));
         assertEquals("should-not-be-read", seenKey.get());

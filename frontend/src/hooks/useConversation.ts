@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type {
   BackendState,
   ConversationCatalog,
+  ConversationDelta,
   ConversationMessage,
   ConversationProvider,
   ConversationProviderStatus,
@@ -45,7 +46,8 @@ export function useConversation(coreState: BackendState): ConversationView {
   const generation = useRef(0);
   const sending = useRef(false);
   const loaded = useRef(false);
-  const responding = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const provisional = useRef(false);
+  const lastSeq = useRef(0);
 
   function applyCatalog(catalog: ConversationCatalog, selected = provider): void {
     setProviders(catalog.providers);
@@ -111,12 +113,60 @@ export function useConversation(coreState: BackendState): ConversationView {
   }, [coreState]);
 
   useEffect(() => {
-    return () => {
-      if (responding.current) {
-        clearTimeout(responding.current);
+    const api = window.eva;
+    if (!api) {
+      return;
+    }
+    return api.subscribeConversation((delta: ConversationDelta) => {
+      if (!provisional.current || delta.seq <= lastSeq.current) {
+        return;
       }
-    };
+      lastSeq.current = delta.seq;
+      setOrb("responding");
+      setMessages((current) => {
+        const next = current.slice();
+        const last = next[next.length - 1];
+        if (last?.role === "assistant") {
+          next[next.length - 1] = { role: "assistant", text: last.text + delta.text };
+          return next;
+        }
+        next.push({ role: "assistant", text: delta.text });
+        return next;
+      });
+    });
   }, []);
+
+  function dropProvisional(): void {
+    if (!provisional.current) {
+      return;
+    }
+    provisional.current = false;
+    setMessages((current) => {
+      const next = current.slice();
+      if (next[next.length - 1]?.role === "assistant") {
+        next.pop();
+      }
+      if (next[next.length - 1]?.role === "user") {
+        next.pop();
+      }
+      return next;
+    });
+  }
+
+  async function syncTranscript(): Promise<void> {
+    const api = window.eva;
+    if (!api) {
+      return;
+    }
+    try {
+      const result = await api.getConversation();
+      if ("providers" in result) {
+        setMessages(result.messages);
+      }
+    } catch {
+      // The local drop already removed text that was not committed.
+    }
+  }
 
   function setProvider(next: ConversationProvider): void {
     const status = providers.find((item) => item.id === next);
@@ -153,6 +203,9 @@ export function useConversation(coreState: BackendState): ConversationView {
     }
     sending.current = true;
     const requestId = ++generation.current;
+    lastSeq.current = 0;
+    provisional.current = true;
+    setMessages((current) => [...current, { role: "user", text: trimmed }]);
     setPhase("generating");
     setOrb("processing");
     setDetail("EVA is writing a reply.");
@@ -167,33 +220,34 @@ export function useConversation(coreState: BackendState): ConversationView {
         return false;
       }
       if (!result.ok) {
-        setPhase(result.code === "unavailable" ? "disconnected" : "error");
-        setOrb("error");
+        dropProvisional();
+        await syncTranscript();
+        setPhase(result.code === "unavailable" ? "disconnected" : result.code === "cancelled" ? "idle" : "error");
+        setOrb(result.code === "cancelled" ? "idle" : "error");
         setDetail(result.detail);
         return false;
       }
-      setMessages((current) => [
-        ...current,
-        { role: "user", text: trimmed },
-        { role: "assistant", text: result.text },
-      ]);
+      provisional.current = false;
+      setMessages((current) => {
+        const next = current.slice();
+        const last = next[next.length - 1];
+        if (last?.role === "assistant") {
+          next[next.length - 1] = { role: "assistant", text: result.text };
+          return next;
+        }
+        next.push({ role: "assistant", text: result.text });
+        return next;
+      });
       setUsage(result.usage);
       setPhase("idle");
-      setOrb("responding");
+      setOrb("idle");
       setDetail(provider === "openai" ? "Replied through OpenAI." : "Replied locally.");
-      if (responding.current) {
-        clearTimeout(responding.current);
-      }
-      responding.current = setTimeout(() => {
-        if (requestId === generation.current) {
-          setOrb("idle");
-        }
-      }, 1200);
       return true;
     } catch {
       if (requestId !== generation.current) {
         return false;
       }
+      dropProvisional();
       setPhase("error");
       setOrb("error");
       setDetail("The reply could not be shown.");
@@ -206,6 +260,7 @@ export function useConversation(coreState: BackendState): ConversationView {
   async function reset(): Promise<void> {
     const api = window.eva;
     generation.current += 1;
+    provisional.current = false;
     setMessages([]);
     setUsage(null);
     setOrb("idle");
@@ -225,10 +280,13 @@ export function useConversation(coreState: BackendState): ConversationView {
 
   function cancel(): void {
     generation.current += 1;
+    dropProvisional();
     setPhase("idle");
     setOrb("idle");
     setDetail("The reply was cancelled.");
-    void window.eva?.cancelConversation();
+    void window.eva?.cancelConversation().finally(() => {
+      void syncTranscript();
+    });
   }
 
   return {

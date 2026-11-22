@@ -6,9 +6,11 @@ import {
   loopbackUrl,
   parseHealthPayload,
   type BackendStatus,
+  type ConversationDelta,
   type ConversationFailure,
+  type ConversationResult,
 } from "../../shared/contract";
-import { callCore, type CoreCall } from "./core-request";
+import { callCore, streamCore, type CoreCall } from "./core-request";
 import { assertJava21, findFreePort, resolveJavaExecutable } from "./process-launch";
 import { redactSecrets } from "./redact";
 import {
@@ -37,6 +39,7 @@ export class BackendManager {
   private suppressExit = false;
   private poll: NodeJS.Timeout | null = null;
   private disposed = false;
+  private activeStream: AbortController | null = null;
   private haltPromise: Promise<void> | null = null;
   private readonly recentLogs: string[] = [];
   private readonly listeners = new Set<(status: BackendStatus) => void>();
@@ -73,6 +76,30 @@ export class BackendManager {
       path,
       method,
       body,
+    });
+  }
+
+  abortActiveStream(): void {
+    this.activeStream?.abort();
+    this.activeStream = null;
+  }
+
+  streamConversation(body: unknown, onDelta: (delta: ConversationDelta) => void): Promise<ConversationResult> {
+    const controller = new AbortController();
+    this.abortActiveStream();
+    this.activeStream = controller;
+    return streamCore({
+      port: this.port,
+      token: this.token,
+      path: "/api/conversation",
+      method: "POST",
+      body,
+      signal: controller.signal,
+      onDelta,
+    }).finally(() => {
+      if (this.activeStream === controller) {
+        this.activeStream = null;
+      }
     });
   }
 

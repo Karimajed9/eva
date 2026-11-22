@@ -101,6 +101,46 @@ class ConversationServiceTest {
     }
 
     @Test
+    void streamsDeltasInOrderAndDropsPartialTextOnCancelOrError() {
+        Fake ollama = new Fake(ProviderId.OLLAMA, true, true);
+        ConversationService service = service(ollama, new Fake(ProviderId.OPENAI, false, true));
+        List<String> deltas = new ArrayList<>();
+
+        Reply reply = service.send(new SendCommand("ollama", "local-model", false, "Hello"), deltas::add);
+
+        assertEquals(List.of("Re", "ply 1"), deltas);
+        assertEquals("Reply 1", reply.text());
+        assertEquals(2, service.catalog().messages().size());
+
+        ollama.failure = new ConversationException("provider-error", 502, "local failed");
+        List<String> failed = new ArrayList<>();
+        ConversationException error = assertThrows(ConversationException.class,
+                () -> service.send(new SendCommand("ollama", "local-model", false, "Next"), failed::add));
+        assertEquals("provider-error", error.code());
+        assertTrue(failed.isEmpty());
+        assertEquals(2, service.catalog().messages().size());
+        assertFalse(error.detail().contains("local failed") && error.detail().contains("sk-"));
+    }
+
+    @Test
+    void cancelDuringStreamingDoesNotKeepThePartialReply() throws Exception {
+        Fake ollama = new Fake(ProviderId.OLLAMA, true, true);
+        ollama.cancelOnDelta = true;
+        ConversationService service = service(ollama, new Fake(ProviderId.OPENAI, false, true));
+        List<String> deltas = new ArrayList<>();
+
+        ConversationException error = assertThrows(ConversationException.class,
+                () -> service.send(new SendCommand("ollama", "local-model", false, "Stop"), delta -> {
+                    deltas.add(delta);
+                    service.cancel();
+                }));
+
+        assertEquals("cancelled", error.code());
+        assertEquals(List.of("Re"), deltas);
+        assertTrue(service.catalog().messages().isEmpty());
+    }
+
+    @Test
     void reportsOllamaUnavailableFromDiscovery() {
         Fake ollama = new Fake(ProviderId.OLLAMA, false, true);
         ConversationService service = service(ollama, new Fake(ProviderId.OPENAI, false, true));
@@ -123,6 +163,7 @@ class ConversationServiceTest {
         private ConversationException failure;
         private CountDownLatch gate;
         private CountDownLatch started;
+        private boolean cancelOnDelta;
 
         private Fake(ProviderId id, boolean reachable, boolean configured) {
             this.id = id;
@@ -144,7 +185,7 @@ class ConversationServiceTest {
         }
 
         @Override
-        public Reply complete(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel) {
+        public Reply stream(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel, java.util.function.Consumer<String> onDelta) {
             calls.incrementAndGet();
             if (started != null) {
                 started.countDown();
@@ -159,11 +200,19 @@ class ConversationServiceTest {
                     throw new ConversationException("cancelled", 409, "The reply was cancelled.");
                 }
             }
+            if (cancel.isCancelled()) {
+                throw new ConversationException("cancelled", 409, "The reply was cancelled.");
+            }
             if (failure != null) {
                 throw failure;
             }
             seen.add(List.copyOf(history));
             assertTrue(systemPrompt.contains("EVA"));
+            onDelta.accept("Re");
+            if (cancelOnDelta) {
+                return new Reply(id.wire(), model, "Reply " + calls.get(), null);
+            }
+            onDelta.accept("ply " + calls.get());
             return new Reply(id.wire(), model, "Reply " + calls.get(), null);
         }
     }

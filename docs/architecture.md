@@ -37,7 +37,7 @@ The core is a Spring Boot 4 application on Java 21. Every route, including conve
 - `GET /api/health` returns `{ status, service, version, timestamp }`.
 - `POST /api/shutdown` asks the process to exit after the response is sent.
 - `GET /api/conversation` returns the in-memory transcript and the provider catalog.
-- `POST /api/conversation` sends one message to the selected provider and returns the complete reply.
+- `POST /api/conversation` sends one message to the selected provider and streams newline-delimited JSON events: `delta` pieces, then one `done` event with the full text and usage, or an `error` event. Validation failures such as `cloud-denied` are still a single JSON error and do not open a stream.
 - `POST /api/conversation/reset` drops the transcript.
 - `POST /api/conversation/cancel` cancels the in-flight reply when the provider call can be interrupted.
 
@@ -56,7 +56,7 @@ The process refuses to start when `EVA_SESSION_TOKEN` is missing, shorter than 3
 
 `EVA_OPENAI_API_KEY` is optional. When it is present, the same startup step copies it onto a credential bean, removes it from Spring's property sources, and arms the log filter for values of at least 16 characters. Provider errors return a fixed detail string. Exception text from the cloud SDK is not copied into the response, because that text can contain request data.
 
-Ollama's base URL is `EVA_OLLAMA_BASE_URL`, defaulting to `http://127.0.0.1:11434`. It must be an `http` loopback URL with no user info and no path. Discovery is `GET /api/tags` with an 800 millisecond timeout. Chat is `POST /api/chat` with `stream` set to false and a 90 second timeout. EVA never calls `/api/pull`. OpenAI uses LangChain4j `OpenAiChatModel` with a 45 second timeout, `maxRetries` of 0, and request and response logging off. The cloud model list is a static allowlist (`gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, and `gpt-6-luna`), so describing OpenAI does not contact the network. GPT-6 Luna is requested with reasoning effort `none`. The other allowlisted models do not set a reasoning effort. Cost estimates use the completion token count, and add reported reasoning tokens only when that count is larger than the completion count.
+Ollama's base URL is `EVA_OLLAMA_BASE_URL`, defaulting to `http://127.0.0.1:11434`. It must be an `http` loopback URL with no user info and no path. Discovery is `GET /api/tags` with an 800 millisecond timeout. Chat is `POST /api/chat` with `stream` set to true and a 90 second timeout. EVA never calls `/api/pull`. OpenAI uses LangChain4j `OpenAiStreamingChatModel` with a 45 second timeout and request and response logging off. The cloud model list is a static allowlist (`gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, and `gpt-6-luna`), so describing OpenAI does not contact the network. GPT-6 Luna is requested with reasoning effort `none`. The other allowlisted models do not set a reasoning effort. Cost estimates use the final usage object. The completion count includes reported reasoning tokens when that count is larger than the completion count. Deltas are not logged.
 
 ## Startup and shutdown
 
@@ -76,7 +76,7 @@ The personality text is `backend/src/main/resources/personality/eva-system-promp
 
 Context is the Java list of user and assistant turns. It is committed only after a successful reply. Reset increments a generation counter so an in-flight reply cannot be appended. A second send while one is in flight returns `busy`. Bounds are 4,000 characters per message, 16 turns, and 8,000 characters of history.
 
-The Electron bridge is still request and response. The renderer waits for the complete reply. Streaming was not added, because the existing IPC shape is one invoke and one result. Cancel increments the generation and calls the provider cancel token. A reply that arrives after cancel or reset is discarded.
+Electron reads the newline-delimited stream on the loopback connection and forwards each new `delta` to the trusted renderer on `eva:conversation:event`. The invoke resolves with the final reply. The renderer appends a sequence number once and replaces the bubble with the final text, so a repeated chunk is not shown twice. Context is still committed only after the reply finishes. Cancel aborts the desktop read, asks Java to cancel, and drops uncommitted text. A reply that arrives after cancel or reset is discarded. The upstream call is closed when its handle or stream is available. An incomplete stream is an error and is not stored.
 
 The HUD keeps the Milestone 1 layout. The conversation panel shows the active provider, local or cloud, the selected model, bubbles, errors, and token or cost figures when the provider returned usage. The orb's `data-phase` is `idle`, `processing`, `responding`, or `error`. `data-state` is still the core connection, not the model. The activity panel remains a local shell feed and still says it is not connected to AI.
 
@@ -107,7 +107,7 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 - A process running as the same desktop user can read the Java process environment and present the session token or the OpenAI key.
 - Loopback HTTP is not encrypted. Local software can observe it, including a conversation with Ollama.
 - Conversation context is memory only. It is gone after reset, shutdown, or a crash. There is no database.
-- Replies are not streamed. Cancel is best-effort: the provider may still finish the HTTP call, and EVA then drops the text.
+- Cancel closes the desktop read immediately. If the provider has not produced a chunk yet, the upstream request can still finish, and EVA drops that text. An incomplete stream is not stored.
 - Ollama must already be running and the model must already be installed. EVA will not start Ollama or pull a model.
 - OpenAI cost is an estimate from a small rate table, and only when the API returns token counts. It is not an invoice.
 - The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered. Separately, GPT-6 Luna was live-tested once through EVA with a real OpenAI key, and that send succeeded. No other OpenAI model has been live-tested.

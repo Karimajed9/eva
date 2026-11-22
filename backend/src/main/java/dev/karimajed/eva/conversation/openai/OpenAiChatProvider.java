@@ -15,17 +15,27 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.AuthenticationException;
 import dev.langchain4j.exception.RateLimitException;
-import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.PartialResponse;
+import dev.langchain4j.model.chat.response.PartialResponseContext;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.chat.response.StreamingHandle;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatRequestParameters;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiTokenUsage;
 import dev.langchain4j.model.output.TokenUsage;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -86,7 +96,7 @@ public class OpenAiChatProvider implements ChatProvider {
     }
 
     @Override
-    public Reply complete(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel) {
+    public Reply stream(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel, Consumer<String> onDelta) {
         if (!configured || client == null) {
             throw new ConversationException("credentials", 503, "OpenAI is not configured. Nothing was sent.");
         }
@@ -106,7 +116,7 @@ public class OpenAiChatProvider implements ChatProvider {
             }
         }
         try {
-            CloudResult result = client.complete(model, messages, cancel);
+            CloudResult result = client.stream(model, messages, cancel, onDelta);
             String text = result.text() == null ? "" : result.text().strip();
             if (text.isEmpty()) {
                 throw new ConversationException("provider-error", 502, "OpenAI returned an empty reply.");
@@ -179,8 +189,29 @@ public class OpenAiChatProvider implements ChatProvider {
         return builder.build();
     }
 
+    static OpenAiStreamingChatModel streamingModel(String apiKey, String model) {
+        OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder builder = OpenAiStreamingChatModel.builder()
+                .apiKey(apiKey)
+                .modelName(model)
+                .timeout(Duration.ofSeconds(45))
+                .logRequests(false)
+                .logResponses(false);
+        if (LUNA.equals(model)) {
+            builder.reasoningEffort("none");
+        }
+        return builder.build();
+    }
+
     static OpenAiChatRequestParameters requestParameters(OpenAiChatModel model, ChatRequest request) {
-        return (OpenAiChatRequestParameters) model.defaultRequestParameters().overrideWith(request.parameters());
+        return merged(model.defaultRequestParameters(), request);
+    }
+
+    static OpenAiChatRequestParameters requestParameters(OpenAiStreamingChatModel model, ChatRequest request) {
+        return merged(model.defaultRequestParameters(), request);
+    }
+
+    private static OpenAiChatRequestParameters merged(OpenAiChatRequestParameters defaults, ChatRequest request) {
+        return (OpenAiChatRequestParameters) defaults.overrideWith(request.parameters());
     }
 
     static String safeFailure(RuntimeException exception) {
@@ -188,7 +219,7 @@ public class OpenAiChatProvider implements ChatProvider {
     }
 
     public interface CloudClient {
-        CloudResult complete(String model, List<ChatMessage> messages, CancelToken cancel);
+        CloudResult stream(String model, List<ChatMessage> messages, CancelToken cancel, Consumer<String> onDelta);
     }
 
     public record CloudResult(String text, Integer promptTokens, Integer completionTokens) {
@@ -203,20 +234,91 @@ public class OpenAiChatProvider implements ChatProvider {
         }
 
         @Override
-        public CloudResult complete(String model, List<ChatMessage> messages, CancelToken cancel) {
+        public CloudResult stream(String model, List<ChatMessage> messages, CancelToken cancel, Consumer<String> onDelta) {
             if (cancel.isCancelled()) {
                 throw new ConversationException("cancelled", 409, "The reply was cancelled.");
             }
-            ChatModel chat = chatModel(apiKey, model);
-            ChatResponse response = chat.chat(ChatRequest.builder().messages(messages).build());
-            if (cancel.isCancelled()) {
+            OpenAiStreamingChatModel chat = streamingModel(apiKey, model);
+            CompletableFuture<CloudResult> done = new CompletableFuture<>();
+            AtomicReference<StreamingHandle> handle = new AtomicReference<>();
+            cancel.onCancel(() -> {
+                StreamingHandle current = handle.get();
+                if (current != null) {
+                    current.cancel();
+                }
+                done.completeExceptionally(new ConversationException("cancelled", 409, "The reply was cancelled."));
+            });
+            try {
+                chat.chat(ChatRequest.builder().messages(messages).build(), new StreamingChatResponseHandler() {
+                    @Override
+                    public void onPartialResponse(PartialResponse partial, PartialResponseContext context) {
+                        handle.set(context.streamingHandle());
+                        if (cancel.isCancelled()) {
+                            context.streamingHandle().cancel();
+                            return;
+                        }
+                        String text = partial.text();
+                        if (text != null && !text.isEmpty()) {
+                            onDelta.accept(text);
+                        }
+                    }
+
+                    @Override
+                    public void onCompleteResponse(ChatResponse response) {
+                        if (cancel.isCancelled()) {
+                            done.completeExceptionally(new ConversationException("cancelled", 409, "The reply was cancelled."));
+                            return;
+                        }
+                        TokenUsage usage = response.tokenUsage();
+                        String text = response.aiMessage() == null ? "" : response.aiMessage().text();
+                        Integer prompt = usage == null ? null : usage.inputTokenCount();
+                        Integer completion = billedCompletionTokens(usage);
+                        done.complete(new CloudResult(text, prompt, completion));
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        if (cancel.isCancelled()) {
+                            done.completeExceptionally(new ConversationException("cancelled", 409, "The reply was cancelled."));
+                            return;
+                        }
+                        if (error instanceof RuntimeException runtime) {
+                            done.completeExceptionally(runtime);
+                            return;
+                        }
+                        done.completeExceptionally(new ConversationException("provider-error", 502, safeFailure(new IllegalStateException(error))));
+                    }
+                });
+            } catch (RuntimeException exception) {
+                if (!done.isDone()) {
+                    done.completeExceptionally(exception);
+                }
+            }
+            try {
+                return done.get(46, TimeUnit.SECONDS);
+            } catch (ExecutionException exception) {
+                Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+                if (cause instanceof ConversationException failure) {
+                    throw failure;
+                }
+                if (cause instanceof RateLimitException rateLimit) {
+                    throw rateLimit;
+                }
+                if (cause instanceof AuthenticationException authentication) {
+                    throw authentication;
+                }
+                if (cause instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+                throw new ConversationException("provider-error", 502, safeFailure(new IllegalStateException(cause)));
+            } catch (TimeoutException exception) {
+                cancel.cancel();
+                throw new ConversationException("unavailable", 503, "The model did not answer before the timeout.");
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                cancel.cancel();
                 throw new ConversationException("cancelled", 409, "The reply was cancelled.");
             }
-            TokenUsage usage = response.tokenUsage();
-            String text = response.aiMessage() == null ? "" : response.aiMessage().text();
-            Integer prompt = usage == null ? null : usage.inputTokenCount();
-            Integer completion = billedCompletionTokens(usage);
-            return new CloudResult(text, prompt, completion);
         }
     }
 }

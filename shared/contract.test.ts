@@ -5,8 +5,10 @@ import {
   parseAppInfo,
   parseBackendStatus,
   parseConversationCatalog,
+  parseConversationDelta,
   parseConversationRequest,
   parseConversationResult,
+  parseConversationStreamLine,
   parseHealthPayload,
 } from "./contract";
 
@@ -89,6 +91,7 @@ describe("IpcChannel", () => {
       "eva:conversation:send",
       "eva:conversation:reset",
       "eva:conversation:cancel",
+      "eva:conversation:event",
     ]);
   });
 });
@@ -160,6 +163,36 @@ describe("conversation contract", () => {
       code: "cloud-denied",
       detail: "Cloud mode is off.",
       apiKey: "secret",
+    })).toBeNull();
+  });
+
+  it("parses stream deltas once and rejects extra fields", () => {
+    expect(parseConversationDelta({ type: "delta", seq: 1, text: "He" })).toEqual({
+      type: "delta",
+      seq: 1,
+      text: "He",
+    });
+    expect(parseConversationDelta({ type: "delta", seq: 1, text: "He", secret: "unit-test-credential" })).toBeNull();
+    expect(parseConversationStreamLine({
+      type: "done",
+      seq: 2,
+      provider: "ollama",
+      model: "llama3.2",
+      text: "Hello",
+      usage: { promptTokens: 4, completionTokens: 2, estimatedUsd: null },
+    })).toMatchObject({ kind: "done", result: { text: "Hello" } });
+    expect(parseConversationStreamLine({
+      type: "error",
+      seq: 3,
+      code: "cancelled",
+      detail: "The reply was cancelled.",
+    })).toMatchObject({ kind: "error", result: { code: "cancelled" } });
+    expect(parseConversationStreamLine({
+      type: "error",
+      seq: 3,
+      code: "cancelled",
+      detail: "The reply was cancelled.",
+      text: "hidden",
     })).toBeNull();
   });
 });

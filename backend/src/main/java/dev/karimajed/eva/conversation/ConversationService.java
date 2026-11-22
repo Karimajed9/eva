@@ -10,6 +10,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,7 @@ public class ConversationService {
     static final int MAX_TEXT = 4_000;
     static final int MAX_MESSAGES = 16;
     static final int MAX_CONTEXT_CHARS = 8_000;
+    static final int MAX_REPLY = 8_000;
     private static final Pattern MODEL_ID = Pattern.compile("[A-Za-z0-9_.:-]{1,80}");
 
     private final Map<ProviderId, ChatProvider> providers;
@@ -46,6 +48,11 @@ public class ConversationService {
     }
 
     public Reply send(SendCommand command) {
+        return send(command, ignored -> {
+        });
+    }
+
+    public Prepared prepare(SendCommand command) {
         ProviderId providerId = validate(command);
         if (providerId == ProviderId.OPENAI && !command.cloudEnabled()) {
             throw new ConversationException("cloud-denied", 403, "Cloud mode is off. Nothing was sent.");
@@ -75,23 +82,61 @@ public class ConversationService {
             request = new ArrayList<>(history);
             request.add(new ChatTurn("user", text));
         }
+        return new Prepared(provider, providerId, cancel, epoch, request, text, command.model());
+    }
+
+    public Reply send(SendCommand command, Consumer<String> onDelta) {
+        Prepared prepared = prepare(command);
+        return emit(prepared, onDelta);
+    }
+
+    public Reply emit(Prepared prepared, Consumer<String> onDelta) {
+        StringBuilder streamed = new StringBuilder();
         try {
-            Reply reply = provider.complete(request, command.model(), personality.prompt(), cancel);
-            if (cancel.isCancelled() || reply == null || reply.text() == null || reply.text().isBlank()
-                    || !providerId.wire().equals(reply.provider())) {
+            if (prepared.cancel().isCancelled()) {
+                throw new ConversationException("cancelled", 409, "The reply was cancelled.");
+            }
+            Reply reply = prepared.provider().stream(
+                    prepared.request(),
+                    prepared.model(),
+                    personality.prompt(),
+                    prepared.cancel(),
+                    piece -> {
+                        if (prepared.cancel().isCancelled()) {
+                            throw new ConversationException("cancelled", 409, "The reply was cancelled.");
+                        }
+                        if (piece == null || piece.isEmpty()) {
+                            return;
+                        }
+                        if (streamed.length() + piece.length() > MAX_REPLY) {
+                            prepared.cancel().cancel();
+                            throw new ConversationException("provider-error", 502, "The reply was longer than EVA can keep.");
+                        }
+                        streamed.append(piece);
+                        onDelta.accept(piece);
+                    });
+            if (prepared.cancel().isCancelled()) {
+                throw new ConversationException("cancelled", 409, "The reply was cancelled.");
+            }
+            if (reply == null || reply.text() == null || reply.text().isBlank()
+                    || !prepared.providerId().wire().equals(reply.provider())) {
                 throw new ConversationException("provider-error", 502, "The selected provider did not answer.");
             }
+            String text = reply.text().strip();
+            if (text.length() > MAX_REPLY) {
+                throw new ConversationException("provider-error", 502, "The reply was longer than EVA can keep.");
+            }
             synchronized (this) {
-                if (cancel.isCancelled() || epoch != generation) {
+                if (prepared.cancel().isCancelled() || prepared.epoch() != generation) {
                     throw new ConversationException("cancelled", 409, "The reply was cancelled.");
                 }
-                history.add(new ChatTurn("user", text));
-                history.add(new ChatTurn("assistant", reply.text().strip()));
+                history.add(new ChatTurn("user", prepared.text()));
+                history.add(new ChatTurn("assistant", text));
                 trim();
             }
-            return reply;
+            return new Reply(reply.provider(), reply.model(), text, reply.usage());
         } finally {
-            inFlight.compareAndSet(cancel, null);
+            inFlight.compareAndSet(prepared.cancel(), null);
         }
     }
 
@@ -141,5 +186,15 @@ public class ConversationService {
     }
 
     public record Catalog(List<ChatTurn> messages, List<ProviderStatus> providers) {
+    }
+
+    public record Prepared(
+            ChatProvider provider,
+            ProviderId providerId,
+            CancelToken cancel,
+            int epoch,
+            List<ChatTurn> request,
+            String text,
+            String model) {
     }
 }

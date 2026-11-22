@@ -102,7 +102,7 @@ There is no automatic fallback. A local failure stays local. A cloud failure sta
 - The system prompt lives in `backend/src/main/resources/personality/eva-system-prompt.txt`. It is the only extra instruction added to a request. EVA does not attach files, mail, calendar data, or a user profile.
 - Transcript context is in memory in the Java process. New conversation clears it. Restarting EVA clears it. There is no database.
 - A message is limited to 4,000 characters. The remembered context is at most 16 messages and 8,000 characters.
-- Replies are complete responses, not a token stream. One reply at a time; a second send while one is running is rejected. Cancel asks the in-flight call to stop, and a late reply is discarded.
+- Replies stream as they are generated. The transcript appends each new piece once, and the orb stays `processing` until the first piece, then `responding` until the reply finishes. One reply at a time; a second send while one is running is rejected. Cancel stops the stream, drops text that was not committed, and a late reply is discarded.
 - Model and provider errors are returned as error codes. They do not crash the window.
 
 ## Security boundaries

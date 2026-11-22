@@ -19,6 +19,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -67,40 +71,72 @@ public class OllamaChatProvider implements ChatProvider {
     }
 
     @Override
-    public Reply complete(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel) {
+    public Reply stream(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel, Consumer<String> onDelta) {
         ObjectNode body = json.createObjectNode();
         body.put("model", model);
-        body.put("stream", false);
+        body.put("stream", true);
         ArrayNode messages = body.putArray("messages");
         messages.addObject().put("role", "system").put("content", systemPrompt);
         for (ChatTurn turn : history) {
             messages.addObject().put("role", turn.role()).put("content", turn.text());
         }
-        ModelHttp.Response response = http.exchange(new ModelHttp.Request(
+        AtomicInteger status = new AtomicInteger(-1);
+        AtomicBoolean finished = new AtomicBoolean();
+        AtomicReference<Usage> usage = new AtomicReference<>();
+        StringBuilder text = new StringBuilder();
+        http.stream(new ModelHttp.Request(
                 "POST",
                 base.resolve("/api/chat"),
                 body.toString(),
                 CHAT_TIMEOUT,
-                Map.of()), cancel);
-        if (response.status() == 404) {
+                Map.of()), cancel, new ModelHttp.StreamConsumer() {
+                    @Override
+                    public void status(int code) {
+                        status.set(code);
+                    }
+
+                    @Override
+                    public void line(String line) {
+                        if (cancel.isCancelled()) {
+                            throw new ConversationException("cancelled", 409, "The reply was cancelled.");
+                        }
+                        if (finished.get()) {
+                            return;
+                        }
+                        JsonNode root;
+                        try {
+                            root = json.readTree(line);
+                        } catch (Exception exception) {
+                            throw new ConversationException("provider-error", 502, "Ollama returned a response EVA could not read.");
+                        }
+                        String piece = root.path("message").path("content").asText("");
+                        if (!piece.isEmpty()) {
+                            text.append(piece);
+                            onDelta.accept(piece);
+                        }
+                        if (root.path("done").asBoolean(false)) {
+                            usage.set(usageOf(root));
+                            finished.set(true);
+                        }
+                    }
+                });
+        if (cancel.isCancelled()) {
+            throw new ConversationException("cancelled", 409, "The reply was cancelled.");
+        }
+        if (status.get() == 404) {
             throw new ConversationException("model-missing", 404, "That model is not installed in local Ollama. EVA will not download it.");
         }
-        if (response.status() != 200) {
+        if (status.get() != 200) {
             throw new ConversationException("provider-error", 502, "Ollama rejected the request.");
         }
-        try {
-            JsonNode root = json.readTree(response.body());
-            String text = root.path("message").path("content").asText("").strip();
-            if (text.isEmpty()) {
-                throw new ConversationException("provider-error", 502, "Ollama returned an empty reply.");
-            }
-            Usage usage = usageOf(root);
-            return new Reply(ProviderId.OLLAMA.wire(), model, text, usage);
-        } catch (ConversationException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new ConversationException("provider-error", 502, "Ollama returned a response EVA could not read.");
+        if (!finished.get()) {
+            throw new ConversationException("provider-error", 502, "Ollama closed the reply before it finished.");
         }
+        String reply = text.toString().strip();
+        if (reply.isEmpty()) {
+            throw new ConversationException("provider-error", 502, "Ollama returned an empty reply.");
+        }
+        return new Reply(ProviderId.OLLAMA.wire(), model, reply, usage.get());
     }
 
     static List<ModelChoice> modelNames(JsonNode root) {

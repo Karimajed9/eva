@@ -88,6 +88,7 @@ function installBridge(options: {
     cancelConversation: async () => {
       tracker.cancelled += 1;
     },
+    subscribeConversation: () => () => {},
   };
   return tracker;
 }
@@ -142,6 +143,7 @@ describe("EVA interface", () => {
       sendConversation: async (request) => reply(request),
       resetConversation: async () => catalog(),
       cancelConversation: async () => {},
+      subscribeConversation: () => () => {},
     };
 
     render(<App />);
@@ -278,6 +280,51 @@ describe("EVA interface", () => {
     expect(tracker.sent).toHaveLength(1);
     expect(tracker.sent[0]).toMatchObject({ provider: "ollama", text: "line one" });
     expect(message).toHaveValue("");
+  });
+
+  it("shows streamed text once and drops it when generation stops", async () => {
+    let emit: (delta: { type: "delta"; seq: number; text: string }) => void = () => {};
+    let finish: (result: ConversationResult) => void = () => {};
+    const tracker = installBridge({
+      send: (request) => new Promise((resolve) => {
+        emit({ type: "delta", seq: 1, text: "Hello " });
+        emit({ type: "delta", seq: 1, text: "NO" });
+        emit({ type: "delta", seq: 2, text: "from EVA." });
+        finish = resolve;
+        void request;
+      }),
+    });
+    window.eva = {
+      ...window.eva!,
+      subscribeConversation: (listener) => {
+        emit = listener;
+        return () => {
+          emit = () => {};
+        };
+      },
+      cancelConversation: async () => {
+        tracker.cancelled += 1;
+        finish({ ok: false, code: "cancelled", detail: "The reply was cancelled." });
+      },
+    };
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Stream this" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Hello from EVA.")).toBeInTheDocument();
+    expect(screen.getByText("Hello from EVA.")).toHaveTextContent("Hello from EVA.");
+    expect(screen.queryByText(/NO/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "responding");
+    expect(screen.getAllByText("Hello from EVA.")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(tracker.cancelled).toBe(1);
+    await waitFor(() => expect(screen.queryByText("Hello from EVA.")).not.toBeInTheDocument());
+    expect(document.querySelector("[data-role='user']")).toBeNull();
+    expect(document.querySelector("[data-role='assistant']")).toBeNull();
+    expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "idle");
+    expect(screen.queryByText("Too late")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue("Stream this"));
   });
 
   it("clears the transcript when a new conversation starts", async () => {

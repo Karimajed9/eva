@@ -5,6 +5,7 @@ import dev.karimajed.eva.conversation.ConversationModels.ProviderId;
 import dev.karimajed.eva.conversation.ConversationModels.ProviderStatus;
 import dev.karimajed.eva.conversation.ConversationModels.Reply;
 import java.util.List;
+import java.util.function.Consumer;
 
 public interface ChatProvider {
 
@@ -12,5 +13,5 @@ public interface ChatProvider {
 
     ProviderStatus describe();
 
-    Reply complete(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel);
+    Reply stream(List<ChatTurn> history, String model, String systemPrompt, CancelToken cancel, Consumer<String> onDelta);
 }
