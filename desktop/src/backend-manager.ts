@@ -6,7 +6,9 @@ import {
   loopbackUrl,
   parseHealthPayload,
   type BackendStatus,
+  type ConversationFailure,
 } from "../../shared/contract";
+import { callCore, type CoreCall } from "./core-request";
 import { assertJava21, findFreePort, resolveJavaExecutable } from "./process-launch";
 import { redactSecrets } from "./redact";
 import {
@@ -62,6 +64,16 @@ export class BackendManager {
 
   endpointPort(): number | null {
     return this.port;
+  }
+
+  core(method: CoreCall["method"], path: string, body?: unknown): Promise<{ status: number; json: unknown } | ConversationFailure> {
+    return callCore({
+      port: this.port,
+      token: this.token,
+      path,
+      method,
+      body,
+    });
   }
 
   onStatus(listener: (status: BackendStatus) => void): () => void {

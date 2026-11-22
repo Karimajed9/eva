@@ -3,8 +3,14 @@ import {
   IpcChannel,
   parseAppInfo,
   parseBackendStatus,
+  parseCatalogResult,
+  parseConversationRequest,
+  parseConversationResult,
   type AppInfo,
   type BackendStatus,
+  type CatalogResult,
+  type ConversationRequest,
+  type ConversationResult,
 } from "../../shared/contract";
 
 const eva = {
@@ -36,6 +42,34 @@ const eva = {
       throw new Error("Invalid application info.");
     }
     return parsed;
+  },
+  async getConversation(): Promise<CatalogResult> {
+    const parsed = parseCatalogResult(await ipcRenderer.invoke(IpcChannel.getConversation));
+    if (!parsed) {
+      throw new Error("Invalid conversation catalog.");
+    }
+    return parsed;
+  },
+  async sendConversation(request: ConversationRequest): Promise<ConversationResult> {
+    const accepted = parseConversationRequest(request);
+    if (!accepted) {
+      return { ok: false, code: "invalid", detail: "That message cannot be sent." };
+    }
+    const parsed = parseConversationResult(await ipcRenderer.invoke(IpcChannel.sendConversation, accepted));
+    if (!parsed) {
+      throw new Error("Invalid conversation reply.");
+    }
+    return parsed;
+  },
+  async resetConversation(): Promise<CatalogResult> {
+    const parsed = parseCatalogResult(await ipcRenderer.invoke(IpcChannel.resetConversation));
+    if (!parsed) {
+      throw new Error("Invalid conversation catalog.");
+    }
+    return parsed;
+  },
+  async cancelConversation(): Promise<void> {
+    await ipcRenderer.invoke(IpcChannel.cancelConversation);
   },
 };
 

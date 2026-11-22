@@ -4,6 +4,9 @@ import {
   loopbackUrl,
   parseAppInfo,
   parseBackendStatus,
+  parseConversationCatalog,
+  parseConversationRequest,
+  parseConversationResult,
   parseHealthPayload,
 } from "./contract";
 
@@ -77,11 +80,86 @@ describe("loopbackUrl", () => {
 });
 
 describe("IpcChannel", () => {
-  it("exposes a fixed three-call bridge", () => {
+  it("exposes only the status and conversation channels", () => {
     expect(Object.values(IpcChannel)).toEqual([
       "eva:backend:get-status",
       "eva:backend:status",
       "eva:app:get-info",
+      "eva:conversation:get",
+      "eva:conversation:send",
+      "eva:conversation:reset",
+      "eva:conversation:cancel",
     ]);
+  });
+});
+
+describe("conversation contract", () => {
+  const provider = {
+    id: "ollama",
+    label: "Ollama",
+    local: true,
+    reachable: true,
+    configured: true,
+    detail: "Local models stay on this machine.",
+    models: [{ id: "llama3.2", label: "llama3.2" }],
+  };
+  const openai = {
+    ...provider,
+    id: "openai",
+    label: "OpenAI",
+    local: false,
+    reachable: true,
+    models: [{ id: "gpt-4o-mini", label: "GPT-4o mini" }],
+  };
+
+  it("accepts a catalog and rejects a credential-shaped extra field", () => {
+    expect(parseConversationCatalog({
+      messages: [{ role: "user", text: "Hello" }],
+      providers: [provider, openai],
+    })?.providers[0].id).toBe("ollama");
+    expect(parseConversationCatalog({
+      messages: [],
+      providers: [{ ...provider, apiKey: "secret" }, openai],
+    })).toBeNull();
+  });
+
+  it("rejects cloud requests that are missing the explicit opt-in flag", () => {
+    expect(parseConversationRequest({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      text: "Hello",
+    })).toBeNull();
+    expect(parseConversationRequest({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      cloudEnabled: false,
+      text: "Hello",
+    })).toEqual({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      cloudEnabled: false,
+      text: "Hello",
+    });
+  });
+
+  it("parses usage and a redacted failure", () => {
+    expect(parseConversationResult({
+      ok: true,
+      provider: "openai",
+      model: "gpt-4o-mini",
+      text: "Hello.",
+      usage: { promptTokens: 3, completionTokens: 4, estimatedUsd: 0.01 },
+    })).toMatchObject({ ok: true, usage: { estimatedUsd: 0.01 } });
+    expect(parseConversationResult({
+      ok: false,
+      code: "cloud-denied",
+      detail: "Cloud mode is off. Nothing was sent.",
+    })).toMatchObject({ ok: false, code: "cloud-denied" });
+    expect(parseConversationResult({
+      ok: false,
+      code: "cloud-denied",
+      detail: "Cloud mode is off.",
+      apiKey: "secret",
+    })).toBeNull();
   });
 });
