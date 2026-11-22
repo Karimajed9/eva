@@ -64,7 +64,7 @@ Pull requests run `.github/workflows/ci.yml`. The backend job builds and tests t
 
 - A dark HUD with the same orb. Its conversation phase is `idle`, `processing`, `responding`, or `error`. That is not a voice animation.
 - A connection pill driven by `GET /api/health`. `CORE ONLINE` means the Java process answered with the expected payload. `CONNECTING`, `CORE OFFLINE`, and `CORE ERROR` are the other real states.
-- A conversation panel with user and assistant bubbles, a provider selector, a model selector, a local or cloud stamp, and a new-conversation control. The activity panel still says **Not connected to AI** because computer automation is not enabled.
+- A conversation panel with user and assistant bubbles, a provider selector, a model selector, a local or cloud stamp, and a new-conversation control. Enter sends the message. Shift+Enter inserts a newline and does not send. The activity panel still says **Not connected to AI** because computer automation is not enabled.
 - If Ollama is not running, the local provider is marked disconnected and EVA does not send the message. It also does not download a model.
 - If you open the Vite URL in a normal browser, the pill reports that the desktop bridge is unavailable. The session token and any API key never enter the page, so the browser cannot call the core.
 
