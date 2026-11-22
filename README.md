@@ -75,6 +75,60 @@ Pull requests run `.github/workflows/ci.yml`. The backend job builds and tests t
 - Electron generates a session token in memory and sends it to Java as `EVA_SESSION_TOKEN`. It is not stored in source. Java removes it from Spring's configuration before the context starts, and a log filter drops any record that still contains the value.
 - Requests must come from loopback, carry that bearer token, and use a loopback `Host`. Browser `POST`s that include an `Origin` are rejected.
 
+## Secret scanning
+
+Pull requests into `main`, pushes to `main`, and manual runs execute `.github/workflows/gitleaks.yml`. The job checks out the full git history and scans it with Gitleaks 8.30.1. A finding fails the check. Secret values are redacted in the log. The workflow does not comment on pull requests and does not upload a report.
+
+The default Gitleaks rules stay enabled. `.gitleaksignore` lists one fingerprint from the redaction unit test, which uses a fake fixture rather than a credential. Do not add a real secret to that file.
+
+### Install Gitleaks on Windows
+
+CI uses 8.30.1. Install that same release and check the checksum before using it. From PowerShell:
+
+```powershell
+$version = "8.30.1"
+$dir = Join-Path $env:LOCALAPPDATA "gitleaks"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$zip = "gitleaks_${version}_windows_x64.zip"
+$base = "https://github.com/gitleaks/gitleaks/releases/download/v$version"
+Invoke-WebRequest "$base/$zip" -OutFile (Join-Path $dir $zip)
+Invoke-WebRequest "$base/gitleaks_${version}_checksums.txt" -OutFile (Join-Path $dir "checksums.txt")
+$expected = ((Select-String -Path (Join-Path $dir "checksums.txt") -Pattern $zip -SimpleMatch).Line -split "\s+")[0].ToLower()
+$actual = (Get-FileHash (Join-Path $dir $zip) -Algorithm SHA256).Hash.ToLower()
+if ($actual -ne $expected) { throw "Gitleaks checksum did not match." }
+Expand-Archive -Path (Join-Path $dir $zip) -DestinationPath $dir -Force
+```
+
+Add the folder that contains `gitleaks.exe` to your user `PATH`, then open a new terminal. `gitleaks version` should print `8.30.1`.
+
+### Scan locally
+
+From the repository root:
+
+```powershell
+gitleaks detect --source . --redact=100 --verbose
+```
+
+Exit code 0 means the history scan found nothing new. Exit code 1 means Gitleaks reported a possible secret or the command failed. The finding names the file, commit, and rule. The secret value is redacted.
+
+### Optional pre-commit check
+
+Git for Windows runs `.githooks/pre-commit` with its shell. The hook scans staged changes and blocks the commit when Gitleaks reports a finding. Enable it in this clone only:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Gitleaks must be on `PATH`. To stop using the hook:
+
+```powershell
+git config --unset core.hooksPath
+```
+
+### When a secret is detected
+
+Treat the value as compromised even though the log hides it. Revoke or rotate it at the service that issued it, then remove it from the working tree. Do not commit the value, and do not silence the finding by ignoring the file. If the value already reached a remote, rotation is what protects it. The old commit remains in git history until that history is rewritten, which is a separate decision and is not required to rotate the credential.
+
 ## Out of scope
 
 Later milestones can add a model, voice, mail, memory, and local actions. Those are not started here. A new capability needs its own IPC channel and backend route; both should keep the checks above.

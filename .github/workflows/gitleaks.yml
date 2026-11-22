@@ -1,0 +1,41 @@
+name: Gitleaks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Scan git history
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          checksums="gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -fsSL -o "${archive}" "${base}/${archive}"
+          curl -fsSL -o "${checksums}" "${base}/${checksums}"
+          grep -F "  ${archive}" "${checksums}" | sha256sum -c -
+          tar -xzf "${archive}" gitleaks
+          install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "${archive}" "${checksums}"
+          gitleaks version
+
+      - name: Scan full git history
+        run: gitleaks detect --source . --redact=100 --no-banner --no-color --verbose --exit-code=1
