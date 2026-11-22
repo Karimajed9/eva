@@ -4,15 +4,17 @@ import { orbTone } from "../status-copy";
 
 interface OrbProps {
   state: BackendState;
+  phase?: "idle" | "processing" | "responding" | "error";
 }
 
-export function Orb({ state }: OrbProps) {
+export function Orb({ state, phase = "idle" }: OrbProps) {
   const reduced = useReducedMotion();
   return (
     <motion.div
       className="orb"
       data-testid="ai-orb"
       data-state={state}
+      data-phase={phase}
       data-tone={orbTone(state)}
       initial={reduced ? false : { opacity: 0, scale: 0.94 }}
       animate={{ opacity: 1, scale: 1 }}

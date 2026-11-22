@@ -5,6 +5,10 @@ export const IpcChannel = {
   getStatus: "eva:backend:get-status",
   statusEvent: "eva:backend:status",
   getAppInfo: "eva:app:get-info",
+  getConversation: "eva:conversation:get",
+  sendConversation: "eva:conversation:send",
+  resetConversation: "eva:conversation:reset",
+  cancelConversation: "eva:conversation:cancel",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -137,4 +141,274 @@ export function loopbackUrl(port: number, requestPath: string): string {
     throw new Error("Refusing a non-loopback backend URL.");
   }
   return url.toString();
+}
+
+export const conversationProviders = ["ollama", "openai"] as const;
+export type ConversationProvider = (typeof conversationProviders)[number];
+
+export const conversationRoles = ["user", "assistant"] as const;
+export type ConversationRole = (typeof conversationRoles)[number];
+
+export const conversationCodes = [
+  "unavailable",
+  "model-missing",
+  "credentials",
+  "cloud-denied",
+  "rate-limited",
+  "invalid",
+  "cancelled",
+  "provider-error",
+  "busy",
+] as const;
+export type ConversationCode = (typeof conversationCodes)[number];
+
+export interface ConversationModel {
+  id: string;
+  label: string;
+}
+
+export interface ConversationProviderStatus {
+  id: ConversationProvider;
+  label: string;
+  local: boolean;
+  reachable: boolean;
+  configured: boolean;
+  detail: string;
+  models: ConversationModel[];
+}
+
+export interface ConversationMessage {
+  role: ConversationRole;
+  text: string;
+}
+
+export interface ConversationUsage {
+  promptTokens: number;
+  completionTokens: number;
+  estimatedUsd: number | null;
+}
+
+export interface ConversationCatalog {
+  messages: ConversationMessage[];
+  providers: ConversationProviderStatus[];
+}
+
+export interface ConversationRequest {
+  provider: ConversationProvider;
+  model: string;
+  cloudEnabled: boolean;
+  text: string;
+}
+
+export interface ConversationSuccess {
+  ok: true;
+  provider: ConversationProvider;
+  model: string;
+  text: string;
+  usage: ConversationUsage | null;
+}
+
+export interface ConversationFailure {
+  ok: false;
+  code: ConversationCode;
+  detail: string;
+}
+
+export type ConversationResult = ConversationSuccess | ConversationFailure;
+export type CatalogResult = ConversationCatalog | ConversationFailure;
+
+const MODEL_ID = /^[A-Za-z0-9_.:-]{1,80}$/;
+
+function isProvider(value: unknown): value is ConversationProvider {
+  return typeof value === "string" && (conversationProviders as readonly string[]).includes(value);
+}
+
+function isShortText(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max;
+}
+
+function parseModel(value: unknown): ConversationModel | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["id", "label"])) {
+    return null;
+  }
+  if (!isShortText(value.id, 80) || !MODEL_ID.test(value.id) || !isShortText(value.label, 80)) {
+    return null;
+  }
+  return { id: value.id, label: value.label };
+}
+
+function parseMessage(value: unknown): ConversationMessage | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["role", "text"])) {
+    return null;
+  }
+  if (value.role !== "user" && value.role !== "assistant") {
+    return null;
+  }
+  if (typeof value.text !== "string" || value.text.length === 0 || value.text.length > 8000) {
+    return null;
+  }
+  return { role: value.role, text: value.text };
+}
+
+function parseUsage(value: unknown): ConversationUsage | null {
+  if (value === null) {
+    return null;
+  }
+  if (!isRecord(value) || !hasExactKeys(value, ["promptTokens", "completionTokens", "estimatedUsd"])) {
+    return null;
+  }
+  if (!Number.isInteger(value.promptTokens) || !Number.isInteger(value.completionTokens)) {
+    return null;
+  }
+  if ((value.promptTokens as number) < 0 || (value.completionTokens as number) < 0) {
+    return null;
+  }
+  if (value.estimatedUsd !== null && (typeof value.estimatedUsd !== "number" || !Number.isFinite(value.estimatedUsd))) {
+    return null;
+  }
+  return {
+    promptTokens: value.promptTokens as number,
+    completionTokens: value.completionTokens as number,
+    estimatedUsd: value.estimatedUsd as number | null,
+  };
+}
+
+export function parseConversationRequest(value: unknown): ConversationRequest | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["provider", "model", "cloudEnabled", "text"])) {
+    return null;
+  }
+  if (!isProvider(value.provider) || typeof value.model !== "string" || !MODEL_ID.test(value.model)) {
+    return null;
+  }
+  if (typeof value.cloudEnabled !== "boolean" || typeof value.text !== "string") {
+    return null;
+  }
+  const text = value.text.trim();
+  if (text.length === 0 || text.length > 4000) {
+    return null;
+  }
+  return {
+    provider: value.provider,
+    model: value.model,
+    cloudEnabled: value.cloudEnabled,
+    text,
+  };
+}
+
+export function parseConversationCatalog(value: unknown): ConversationCatalog | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["messages", "providers"])) {
+    return null;
+  }
+  if (!Array.isArray(value.messages) || value.messages.length > 40 || !Array.isArray(value.providers) || value.providers.length !== 2) {
+    return null;
+  }
+  const messages: ConversationMessage[] = [];
+  for (const message of value.messages) {
+    const parsed = parseMessage(message);
+    if (!parsed) {
+      return null;
+    }
+    messages.push(parsed);
+  }
+  const providers: ConversationProviderStatus[] = [];
+  for (const provider of value.providers) {
+    if (!isRecord(provider) || !hasExactKeys(provider, ["id", "label", "local", "reachable", "configured", "detail", "models"])) {
+      return null;
+    }
+    if (!isProvider(provider.id) || !isShortText(provider.label, 40) || typeof provider.local !== "boolean") {
+      return null;
+    }
+    if (typeof provider.reachable !== "boolean" || typeof provider.configured !== "boolean" || !isShortText(provider.detail, 400)) {
+      return null;
+    }
+    if (!Array.isArray(provider.models) || provider.models.length > 100) {
+      return null;
+    }
+    const models: ConversationModel[] = [];
+    for (const model of provider.models) {
+      const parsed = parseModel(model);
+      if (!parsed) {
+        return null;
+      }
+      models.push(parsed);
+    }
+    providers.push({
+      id: provider.id,
+      label: provider.label,
+      local: provider.local,
+      reachable: provider.reachable,
+      configured: provider.configured,
+      detail: provider.detail,
+      models,
+    });
+  }
+  if (providers[0]?.id !== "ollama" || providers[1]?.id !== "openai") {
+    return null;
+  }
+  return { messages, providers };
+}
+
+export function parseConversationResult(value: unknown): ConversationResult | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (value.ok === false) {
+    if (!hasExactKeys(value, ["ok", "code", "detail"])) {
+      return null;
+    }
+    if (typeof value.code !== "string" || !(conversationCodes as readonly string[]).includes(value.code)) {
+      return null;
+    }
+    if (!isShortText(value.detail, 400)) {
+      return null;
+    }
+    return { ok: false, code: value.code as ConversationCode, detail: value.detail };
+  }
+  if (!hasExactKeys(value, ["ok", "provider", "model", "text", "usage"])) {
+    return null;
+  }
+  if (value.ok !== true || !isProvider(value.provider) || typeof value.model !== "string" || !MODEL_ID.test(value.model)) {
+    return null;
+  }
+  if (typeof value.text !== "string" || value.text.trim().length === 0 || value.text.length > 8000) {
+    return null;
+  }
+  const usage = parseUsage(value.usage);
+  if (value.usage !== null && usage === null) {
+    return null;
+  }
+  return {
+    ok: true,
+    provider: value.provider,
+    model: value.model,
+    text: value.text,
+    usage,
+  };
+}
+
+export function parseCatalogResult(value: unknown): CatalogResult | null {
+  if (isRecord(value) && value.ok === false) {
+    const failure = parseConversationResult(value);
+    return failure !== null && !failure.ok ? failure : null;
+  }
+  return parseConversationCatalog(value);
+}
+
+export function failureFromCore(status: number, body: string): ConversationFailure {
+  let code: ConversationCode = "provider-error";
+  let detail = "The local core could not complete the conversation.";
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (isRecord(parsed) && typeof parsed.error === "string" && (conversationCodes as readonly string[]).includes(parsed.error)) {
+      code = parsed.error as ConversationCode;
+    }
+    if (isRecord(parsed) && typeof parsed.detail === "string" && parsed.detail.length > 0 && parsed.detail.length <= 400) {
+      detail = parsed.detail;
+    }
+  } catch {
+    if (status === 0) {
+      code = "unavailable";
+    }
+  }
+  return { ok: false, code, detail };
 }

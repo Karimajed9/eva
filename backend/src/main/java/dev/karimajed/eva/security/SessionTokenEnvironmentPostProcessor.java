@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Predicate;
 import org.springframework.boot.EnvironmentPostProcessor;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor;
@@ -34,14 +35,21 @@ public class SessionTokenEnvironmentPostProcessor implements EnvironmentPostProc
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        String token = capture(environment);
+        String token = capture(environment, SessionTokenEnvironmentPostProcessor::isSessionKey);
+        String openAiKey = capture(environment, SessionTokenEnvironmentPostProcessor::isOpenAiKey);
         TokenLogFilter.arm(token);
+        if (!openAiKey.isEmpty()) {
+            TokenLogFilter.arm(openAiKey, 16);
+        }
         scrub(environment);
-        application.addInitializers(context -> context.getBeanFactory()
-                .registerSingleton("sessionToken", new SessionToken(token)));
+        application.addInitializers(context -> {
+            var factory = context.getBeanFactory();
+            factory.registerSingleton("sessionToken", new SessionToken(token));
+            factory.registerSingleton("openAiCredential", new OpenAiCredential(openAiKey));
+        });
     }
 
-    private static String capture(ConfigurableEnvironment environment) {
+    private static String capture(ConfigurableEnvironment environment, Predicate<String> key) {
         for (PropertySource<?> source : environment.getPropertySources()) {
             if (!(source instanceof EnumerablePropertySource<?> enumerable)) {
                 continue;
@@ -50,7 +58,7 @@ public class SessionTokenEnvironmentPostProcessor implements EnvironmentPostProc
                 continue;
             }
             for (String name : enumerable.getPropertyNames()) {
-                if (!isSecretKey(name)) {
+                if (!key.test(name)) {
                     continue;
                 }
                 Object raw = source.getProperty(name);
@@ -99,9 +107,20 @@ public class SessionTokenEnvironmentPostProcessor implements EnvironmentPostProc
         return new MapPropertySource(source.getName(), copy);
     }
 
+    static boolean isSessionKey(String key) {
+        return "eva.session.token".equals(normalize(key));
+    }
+
+    static boolean isOpenAiKey(String key) {
+        return "eva.openai.api.key".equals(normalize(key));
+    }
+
     static boolean isSecretKey(String key) {
-        String normalized = key.toLowerCase(Locale.ROOT).replace('-', '.').replace('_', '.');
-        return "eva.session.token".equals(normalized);
+        return isSessionKey(key) || isOpenAiKey(key);
+    }
+
+    private static String normalize(String key) {
+        return key.toLowerCase(Locale.ROOT).replace('-', '.').replace('_', '.');
     }
 
     private static final class HiddenSecretSource extends EnumerablePropertySource<EnumerablePropertySource<?>> {

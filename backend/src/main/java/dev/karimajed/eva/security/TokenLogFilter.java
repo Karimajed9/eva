@@ -24,7 +24,11 @@ public final class TokenLogFilter extends TurboFilter {
     }
 
     public static void arm(String secret) {
-        if (secret != null && secret.length() >= SessionToken.MINIMUM_LENGTH && !SECRETS.contains(secret)) {
+        arm(secret, SessionToken.MINIMUM_LENGTH);
+    }
+
+    public static void arm(String secret, int minimumLength) {
+        if (secret != null && secret.length() >= minimumLength && !SECRETS.contains(secret)) {
             SECRETS.add(secret);
         }
         if (installed || SECRETS.isEmpty()) {
