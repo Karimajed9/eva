@@ -137,10 +137,10 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
       const status = await pageText(window, "[data-testid=\"connection-status\"]");
       const conversation = await pageText(window, "[data-testid=\"conversation-panel\"]");
       const activity = await pageText(window, "[data-testid=\"activity-panel\"]");
-      detail = `${status.trim()} | conversation=${conversation.toLowerCase().includes("not connected to ai")} | activity=${activity.toLowerCase().includes("not connected to ai")}`;
+      detail = `${status.trim()} | conversation=${conversation.toLowerCase().includes("provider")} | activity=${activity.toLowerCase().includes("not connected to ai")}`;
       if (
         status.includes("CORE ONLINE")
-        && conversation.toLowerCase().includes("not connected to ai")
+        && conversation.toLowerCase().includes("provider")
         && activity.toLowerCase().includes("not connected to ai")
       ) {
         ok = true;

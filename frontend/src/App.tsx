@@ -2,10 +2,12 @@ import { ActivityPanel } from "./components/ActivityPanel";
 import { ConversationPanel } from "./components/ConversationPanel";
 import { Header } from "./components/Header";
 import { Stage } from "./components/Stage";
+import { useConversation } from "./hooks/useConversation";
 import { useAppInfo, useBackendStatus } from "./hooks/useBackendStatus";
 
 export function App() {
   const status = useBackendStatus();
+  const conversation = useConversation();
   const appInfo = useAppInfo();
   const platform = appInfo?.platform
     ?? (typeof navigator !== "undefined" && navigator.userAgent.includes("Windows") ? "win32" : "unknown");
@@ -16,11 +18,11 @@ export function App() {
       <div className="vignette" />
       <Header status={status} platform={platform} />
       <main className="workspace">
-        <ConversationPanel />
-        <Stage status={status} />
+        <ConversationPanel conversation={conversation} />
+        <Stage status={status} phase={conversation.orb} />
         <ActivityPanel status={status} />
       </main>
-      <footer className="footer">Milestone 1 · Desktop foundation · No model connected</footer>
+      <footer className="footer">Local by default · Cloud only after you opt in</footer>
     </div>
   );
 }
