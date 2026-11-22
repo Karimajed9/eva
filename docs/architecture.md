@@ -1,35 +1,47 @@
 # Architecture
 
-EVA (Electronic Virtual Assistant), Milestone 1, is a local desktop shell. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Nothing in this milestone calls a model, microphone, mailbox, or external API.
+EVA (Electronic Virtual Assistant) is a local desktop assistant. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Milestone 1 is the shell and the health check. Milestone 2 adds conversation through a provider interface. Ollama is the default and stays on the machine. OpenAI runs only after an explicit opt-in. Voice, tools, mail, permanent memory, and computer automation are not implemented.
 
 ```mermaid
 flowchart LR
   ui["React renderer"] -->|"narrow IPC"| main["Electron main"]
   main -->|"HTTP on 127.0.0.1"| java["Spring Boot"]
+  java -->|"local chat"| ollama["Ollama on loopback"]
+  java -->|"only after opt-in"| openai["OpenAI"]
 ```
 
 ## Processes
 
 | Process | Responsibility | What it cannot do |
 | --- | --- | --- |
-| Renderer | Draw the interface and subscribe to status | Use Node.js, read the session token, open OS files |
-| Electron main | Create the window, start and stop Java, hold the session token | Expose a general-purpose IPC or shell bridge |
-| Java backend | Answer health checks and shut down when asked | Listen on a non-loopback address |
+| Renderer | Draw the interface, subscribe to status, and send the conversation the user typed | Use Node.js, read the session token or an API key, open OS files |
+| Electron main | Create the window, start and stop Java, hold the session token, proxy conversation HTTP | Expose a general-purpose IPC or shell bridge |
+| Java backend | Answer health checks, run the selected conversation provider, and shut down when asked | Listen on a non-loopback address, or call OpenAI unless that send opted in |
 
-The renderer is loaded with `contextIsolation`, `sandbox`, and `nodeIntegration: false`. The preload script exposes one object, `window.eva`, with three operations:
+The renderer is loaded with `contextIsolation`, `sandbox`, and `nodeIntegration: false`. The preload script exposes one object, `window.eva`, with these operations:
 
 - `getBackendStatus()`
 - `subscribeBackendStatus(listener)`
 - `getAppInfo()`
+- `getConversation()`
+- `sendConversation(request)`
+- `resetConversation()`
+- `cancelConversation()`
 
 Payloads are checked against `shared/contract.ts` in the preload before React sees them. Unknown fields are rejected. The main process accepts IPC only from the Vite dev server in development, and only from the built `index.html` in a packaged shell. Subframes are rejected. Window opens are denied, so the shell does not hand a URL to the system browser.
 
 ## Backend
 
-The core is a Spring Boot 4 application on Java 21. It has two routes:
+The core is a Spring Boot 4 application on Java 21. Every route, including conversation, goes through the same loopback filter. The routes are:
 
 - `GET /api/health` returns `{ status, service, version, timestamp }`.
 - `POST /api/shutdown` asks the process to exit after the response is sent.
+- `GET /api/conversation` returns the in-memory transcript and the provider catalog.
+- `POST /api/conversation` sends one message to the selected provider and returns the complete reply.
+- `POST /api/conversation/reset` drops the transcript.
+- `POST /api/conversation/cancel` cancels the in-flight reply when the provider call can be interrupted.
+
+`ChatProvider` is the only model interface. `OllamaChatProvider` and `OpenAiChatProvider` both implement it. `ConversationService` selects one provider from the request. It does not fall back to the other. OpenAI is refused with `cloud-denied` when `cloudEnabled` is false, and that check happens before the cloud client is used.
 
 `LoopbackBindingConfig` sets the listen address to `127.0.0.1` after Spring applies configuration, so `--server.address=0.0.0.0` does not publish the port. A request still has to pass `LoopbackSessionFilter`:
 
@@ -41,6 +53,10 @@ The core is a Spring Boot 4 application on Java 21. It has two routes:
 The comparison hashes both strings with SHA-256 and uses `MessageDigest.isEqual`. The token is never written into source, logs, or the runtime pid file. Electron generates 32 random bytes at launch and passes them only in the child process environment, not on the command line. Before the application context refreshes, the backend copies that value onto the session bean, removes it from Spring's property sources, and arms a log filter. Debug and trace logs do not print the token, and `eva.session-token` no longer resolves from the environment.
 
 The process refuses to start when `EVA_SESSION_TOKEN` is missing, shorter than 32 characters, or contains whitespace.
+
+`EVA_OPENAI_API_KEY` is optional. When it is present, the same startup step copies it onto a credential bean, removes it from Spring's property sources, and arms the log filter for values of at least 16 characters. Provider errors return a fixed detail string. Exception text from the cloud SDK is not copied into the response, because that text can contain request data.
+
+Ollama's base URL is `EVA_OLLAMA_BASE_URL`, defaulting to `http://127.0.0.1:11434`. It must be an `http` loopback URL with no user info and no path. Discovery is `GET /api/tags` with an 800 millisecond timeout. Chat is `POST /api/chat` with `stream` set to false and a 90 second timeout. EVA never calls `/api/pull`. OpenAI uses LangChain4j `OpenAiChatModel` with a 45 second timeout, `maxRetries` of 0, and request and response logging off. The cloud model list is a static allowlist, so describing OpenAI does not contact the network.
 
 ## Startup and shutdown
 
@@ -54,9 +70,19 @@ The process refuses to start when `EVA_SESSION_TOKEN` is missing, shorter than 3
 
 A pid file in the temp directory records the backend pid and port, never the token. On the next launch EVA stops a previous process only when that pid's command line contains the backend jar name.
 
+## Conversation
+
+The personality text is `backend/src/main/resources/personality/eva-system-prompt.txt`. It is loaded once and passed as the system message. Application code does not embed a second prompt, and the request does not add account, file, or device data.
+
+Context is the Java list of user and assistant turns. It is committed only after a successful reply. Reset increments a generation counter so an in-flight reply cannot be appended. A second send while one is in flight returns `busy`. Bounds are 4,000 characters per message, 16 turns, and 8,000 characters of history.
+
+The Electron bridge is still request and response. The renderer waits for the complete reply. Streaming was not added, because the existing IPC shape is one invoke and one result. Cancel increments the generation and calls the provider cancel token. A reply that arrives after cancel or reset is discarded.
+
+The HUD keeps the Milestone 1 layout. The conversation panel shows the active provider, local or cloud, the selected model, bubbles, errors, and token or cost figures when the provider returned usage. The orb's `data-phase` is `idle`, `processing`, `responding`, or `error`. `data-state` is still the core connection, not the model. The activity panel remains a local shell feed and still says it is not connected to AI.
+
 ## Interface
 
-The screen is a local HUD: an animated orb, a connection pill driven by the live health check, and two panels. Both panels say **Not connected to AI**. The conversation composer is disabled. The activity list shows shell events from this process, not an agent log. Motion animates the entrance of the orb and panels, and the stylesheet respects `prefers-reduced-motion`.
+The screen is a local HUD: an animated orb, a connection pill driven by the live health check, a working conversation panel, and an activity panel. The activity list shows shell events from this process, not an agent log. Motion animates the entrance of the orb and panels, and the stylesheet respects `prefers-reduced-motion`.
 
 Fonts are bundled with the app. The interface does not load assets from a third-party host.
 
@@ -64,23 +90,32 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 
 **The renderer does not call Java.** If React held the token, any script that reached the page could shut the core down or read health as an authenticated client. Keeping the token in the main process means a compromised page still has to get through the IPC allowlist.
 
-**Spring Security is not on the classpath.** The surface is two routes and one header. A servlet filter is easier to audit than a security auto-configuration.
+**Spring Security is not on the classpath.** The surface is the health and shutdown routes plus the conversation routes, all behind one header check. A servlet filter is easier to audit than a security auto-configuration.
 
 **Traffic stays on HTTP.** The socket is loopback-only. TLS would require a certificate and would not stop another process running as the same user. That residual risk is accepted for this milestone.
 
-**The token is an environment variable.** Command-line arguments are easier to see in process listings. The environment is still visible to the same user. It is not stored in the repository, a config file, or the renderer. Spring drops the key from its property sources before refresh, so a configuration dump cannot include the value.
+**The token is an environment variable.** Command-line arguments are easier to see in process listings. The environment is still visible to the same user. It is not stored in the repository, a config file, or the renderer. Spring drops the session token and the optional OpenAI key from its property sources before refresh, so a configuration dump cannot include either value.
 
 **There is no actuator and no static file serving.** The Java process is not a general web app. Error responses omit messages, stack traces, and exception types.
 
-**Placeholders are presentational.** Conversation and activity components receive their copy as props or local constants. A later milestone can replace the data source without giving the renderer Node access. A new capability still needs an explicit IPC channel and a backend route, both of which inherit the checks above.
+**The activity feed is still presentational.** It is not an automation log. Conversation is no longer a placeholder: the renderer calls the four conversation channels and does not choose a different code path for Ollama and OpenAI. A later capability still needs an explicit IPC channel and a backend route, both of which inherit the checks above.
 
 **The dev server is loopback too.** Vite listens on `127.0.0.1:5173`. Production loads `frontend/dist` over `file:`.
 
 ## Known limitations
 
-- A process running as the same desktop user can read the Java process environment and present the session token.
-- Loopback HTTP is not encrypted. Local software can observe it.
+- A process running as the same desktop user can read the Java process environment and present the session token or the OpenAI key.
+- Loopback HTTP is not encrypted. Local software can observe it, including a conversation with Ollama.
+- Conversation context is memory only. It is gone after reset, shutdown, or a crash. There is no database.
+- Replies are not streamed. Cancel is best-effort: the provider may still finish the HTTP call, and EVA then drops the text.
+- Ollama must already be running and the model must already be installed. EVA will not start Ollama or pull a model.
+- OpenAI cost is an estimate from a small rate table, and only when the API returns token counts. It is not an invoice.
+- The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered.
 - If the shell process is terminated without running its quit handlers, the pid file is the recovery path. A reused pid whose command line cannot be confirmed is left alone.
 - There is no installer. `npm start` launches the shell from the source tree.
 - Development builds allow Electron DevTools. Packaged windows disable them.
 - GitHub Actions builds and tests the backend, the React app, and the Electron shell on pull requests. This checkout has not executed that workflow on GitHub.
+
+## Not in this milestone
+
+Voice, computer automation, tool execution, Gmail, calendar, permanent memory, SQLite, background tasks, and hosting the core off this machine are planned only in the sense that they are intentionally absent. They are not stubbed as working features.
