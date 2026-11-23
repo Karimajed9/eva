@@ -150,6 +150,9 @@ export type ConversationProvider = (typeof conversationProviders)[number];
 export const conversationRoles = ["user", "assistant"] as const;
 export type ConversationRole = (typeof conversationRoles)[number];
 
+export const conversationStatuses = ["complete", "stopped"] as const;
+export type ConversationStatus = (typeof conversationStatuses)[number];
+
 export const conversationCodes = [
   "unavailable",
   "model-missing",
@@ -181,6 +184,7 @@ export interface ConversationProviderStatus {
 export interface ConversationMessage {
   role: ConversationRole;
   text: string;
+  status: ConversationStatus;
 }
 
 export interface ConversationUsage {
@@ -250,16 +254,22 @@ function parseModel(value: unknown): ConversationModel | null {
 }
 
 function parseMessage(value: unknown): ConversationMessage | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["role", "text"])) {
+  if (!isRecord(value) || !hasExactKeys(value, ["role", "text", "status"])) {
     return null;
   }
   if (value.role !== "user" && value.role !== "assistant") {
     return null;
   }
+  if (value.status !== "complete" && value.status !== "stopped") {
+    return null;
+  }
   if (typeof value.text !== "string" || value.text.length === 0 || value.text.length > 8000) {
     return null;
   }
-  return { role: value.role, text: value.text };
+  if (value.role === "assistant" && value.status === "stopped" && value.text.trim().length === 0) {
+    return null;
+  }
+  return { role: value.role, text: value.text, status: value.status };
 }
 
 function parseUsage(value: unknown): ConversationUsage | null {

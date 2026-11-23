@@ -27,6 +27,10 @@ public class ConversationService {
     private final Personality personality;
     private final List<ChatTurn> history = new ArrayList<>();
     private final AtomicReference<CancelToken> inFlight = new AtomicReference<>();
+    private final StringBuilder activePartial = new StringBuilder();
+    private String activeUserText = "";
+    private int activeEpoch = -1;
+    private boolean activeOpen;
     private int generation;
 
     public ConversationService(List<ChatProvider> providers, Personality personality) {
@@ -71,18 +75,38 @@ public class ConversationService {
                     : described.detail());
         }
         CancelToken cancel = new CancelToken();
-        if (!inFlight.compareAndSet(null, cancel)) {
-            throw new ConversationException("busy", 409, "A reply is already in progress.");
-        }
         int epoch;
         List<ChatTurn> request;
         String text = command.text().strip();
         synchronized (this) {
+            if (!inFlight.compareAndSet(null, cancel)) {
+                throw new ConversationException("busy", 409, "A reply is already in progress.");
+            }
             epoch = generation;
-            request = new ArrayList<>(history);
+            request = modelContext();
             request.add(new ChatTurn("user", text));
+            activeUserText = text;
+            activePartial.setLength(0);
+            activeEpoch = epoch;
+            activeOpen = true;
         }
         return new Prepared(provider, providerId, cancel, epoch, request, text, command.model());
+    }
+
+    /**
+     * Stopped assistant text stays in the transcript the window shows.
+     * It is not a completed reply, and it is left out of the next model request.
+     * The user question from that turn is included.
+     */
+    private List<ChatTurn> modelContext() {
+        List<ChatTurn> context = new ArrayList<>();
+        for (ChatTurn turn : history) {
+            if (turn.stopped() && "assistant".equals(turn.role())) {
+                continue;
+            }
+            context.add(new ChatTurn(turn.role(), turn.text()));
+        }
+        return context;
     }
 
     public Reply send(SendCommand command, Consumer<String> onDelta) {
@@ -91,7 +115,6 @@ public class ConversationService {
     }
 
     public Reply emit(Prepared prepared, Consumer<String> onDelta) {
-        StringBuilder streamed = new StringBuilder();
         try {
             if (prepared.cancel().isCancelled()) {
                 throw new ConversationException("cancelled", 409, "The reply was cancelled.");
@@ -101,21 +124,8 @@ public class ConversationService {
                     prepared.model(),
                     personality.prompt(),
                     prepared.cancel(),
-                    piece -> {
-                        if (prepared.cancel().isCancelled()) {
-                            throw new ConversationException("cancelled", 409, "The reply was cancelled.");
-                        }
-                        if (piece == null || piece.isEmpty()) {
-                            return;
-                        }
-                        if (streamed.length() + piece.length() > MAX_REPLY) {
-                            prepared.cancel().cancel();
-                            throw new ConversationException("provider-error", 502, "The reply was longer than EVA can keep.");
-                        }
-                        streamed.append(piece);
-                        onDelta.accept(piece);
-                    });
-            if (prepared.cancel().isCancelled()) {
+                    piece -> acceptDelta(prepared, piece, onDelta));
+            if (!currentTurn(prepared)) {
                 throw new ConversationException("cancelled", 409, "The reply was cancelled.");
             }
             if (reply == null || reply.text() == null || reply.text().isBlank()
@@ -127,30 +137,101 @@ public class ConversationService {
                 throw new ConversationException("provider-error", 502, "The reply was longer than EVA can keep.");
             }
             synchronized (this) {
-                if (prepared.cancel().isCancelled() || prepared.epoch() != generation) {
+                if (!currentTurn(prepared)) {
                     throw new ConversationException("cancelled", 409, "The reply was cancelled.");
                 }
                 history.add(new ChatTurn("user", prepared.text()));
                 history.add(new ChatTurn("assistant", text));
+                activeOpen = false;
+                activePartial.setLength(0);
                 trim();
             }
             return new Reply(reply.provider(), reply.model(), text, reply.usage());
+        } catch (ConversationException exception) {
+            synchronized (this) {
+                if ("cancelled".equals(exception.code()) && currentTurn(prepared)) {
+                    keepStoppedTurn();
+                } else if (currentTurn(prepared)) {
+                    activeOpen = false;
+                    activePartial.setLength(0);
+                }
+            }
+            throw exception;
         } finally {
-            inFlight.compareAndSet(prepared.cancel(), null);
+            synchronized (this) {
+                inFlight.compareAndSet(prepared.cancel(), null);
+            }
         }
     }
 
-    public synchronized void reset() {
-        cancel();
-        history.clear();
-        generation++;
-    }
-
-    public void cancel() {
-        CancelToken current = inFlight.get();
+    public void reset() {
+        CancelToken current;
+        synchronized (this) {
+            current = inFlight.getAndSet(null);
+            activeOpen = false;
+            activePartial.setLength(0);
+            history.clear();
+            generation++;
+        }
         if (current != null) {
             current.cancel();
         }
+    }
+
+    public void cancel() {
+        CancelToken current;
+        synchronized (this) {
+            current = inFlight.get();
+            if (activeOpen) {
+                keepStoppedTurn();
+            }
+            if (current != null) {
+                inFlight.compareAndSet(current, null);
+            }
+        }
+        if (current != null) {
+            current.cancel();
+        }
+    }
+
+    private void acceptDelta(Prepared prepared, String piece, Consumer<String> onDelta) {
+        if (piece == null || piece.isEmpty()) {
+            return;
+        }
+        synchronized (this) {
+            if (!currentTurn(prepared)) {
+                throw new ConversationException("cancelled", 409, "The reply was cancelled.");
+            }
+            if (activePartial.length() + piece.length() > MAX_REPLY) {
+                prepared.cancel().cancel();
+                activeOpen = false;
+                activePartial.setLength(0);
+                throw new ConversationException("provider-error", 502, "The reply was longer than EVA can keep.");
+            }
+            activePartial.append(piece);
+        }
+        onDelta.accept(piece);
+    }
+
+    private boolean currentTurn(Prepared prepared) {
+        return activeOpen && prepared.epoch() == activeEpoch && !prepared.cancel().isCancelled();
+    }
+
+    private void keepStoppedTurn() {
+        if (!activeOpen) {
+            return;
+        }
+        activeOpen = false;
+        generation++;
+        String partial = activePartial.toString();
+        activePartial.setLength(0);
+        if (partial.isBlank()) {
+            history.add(new ChatTurn("user", activeUserText, ChatTurn.STOPPED));
+        } else {
+            history.add(new ChatTurn("user", activeUserText));
+            history.add(new ChatTurn("assistant", partial, ChatTurn.STOPPED));
+        }
+        trim();
     }
 
     private ProviderId validate(SendCommand command) {

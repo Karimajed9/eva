@@ -111,6 +111,8 @@ class ConversationServiceTest {
         assertEquals(List.of("Re", "ply 1"), deltas);
         assertEquals("Reply 1", reply.text());
         assertEquals(2, service.catalog().messages().size());
+        assertEquals(ChatTurn.COMPLETE, service.catalog().messages().get(0).status());
+        assertEquals(ChatTurn.COMPLETE, service.catalog().messages().get(1).status());
 
         ollama.failure = new ConversationException("provider-error", 502, "local failed");
         List<String> failed = new ArrayList<>();
@@ -123,21 +125,70 @@ class ConversationServiceTest {
     }
 
     @Test
-    void cancelDuringStreamingDoesNotKeepThePartialReply() throws Exception {
+    void cancelAfterChunksKeepsThePartialAndLeavesItOutOfTheNextPrompt() {
         Fake ollama = new Fake(ProviderId.OLLAMA, true, true);
         ollama.cancelOnDelta = true;
-        ConversationService service = service(ollama, new Fake(ProviderId.OPENAI, false, true));
+        Fake openai = new Fake(ProviderId.OPENAI, false, true);
+        ConversationService service = service(ollama, openai);
         List<String> deltas = new ArrayList<>();
 
         ConversationException error = assertThrows(ConversationException.class,
                 () -> service.send(new SendCommand("ollama", "local-model", false, "Stop"), delta -> {
                     deltas.add(delta);
-                    service.cancel();
+                    if (deltas.size() == 1) {
+                        service.cancel();
+                    }
                 }));
 
         assertEquals("cancelled", error.code());
         assertEquals(List.of("Re"), deltas);
-        assertTrue(service.catalog().messages().isEmpty());
+        assertEquals(List.of("user", "assistant"), service.catalog().messages().stream().map(ChatTurn::role).toList());
+        assertEquals("Stop", service.catalog().messages().get(0).text());
+        assertEquals(ChatTurn.COMPLETE, service.catalog().messages().get(0).status());
+        assertEquals("Re", service.catalog().messages().get(1).text());
+        assertEquals(ChatTurn.STOPPED, service.catalog().messages().get(1).status());
+        assertEquals(1, ollama.calls.get());
+
+        ollama.cancelOnDelta = false;
+        service.send(new SendCommand("ollama", "local-model", false, "Next"));
+        List<String> context = ollama.seen.get(ollama.seen.size() - 1).stream().map(ChatTurn::text).toList();
+        assertEquals(List.of("Stop", "Next"), context);
+        assertFalse(context.contains("Re"));
+
+        ConversationException denied = assertThrows(ConversationException.class,
+                () -> service.send(new SendCommand("openai", "gpt-4o-mini", false, "Cloud")));
+        assertEquals("cloud-denied", denied.code());
+        assertEquals(0, openai.calls.get());
+    }
+
+    @Test
+    void cancelBeforeTheFirstChunkKeepsTheQuestionWithoutAnAssistantTurn() throws Exception {
+        Fake ollama = new Fake(ProviderId.OLLAMA, true, true);
+        ollama.gate = new CountDownLatch(1);
+        ollama.started = new CountDownLatch(1);
+        ConversationService service = service(ollama, new Fake(ProviderId.OPENAI, false, true));
+        Thread first = new Thread(() -> {
+            ConversationException error = assertThrows(ConversationException.class,
+                    () -> service.send(new SendCommand("ollama", "local-model", false, "Waiting")));
+            assertEquals("cancelled", error.code());
+        });
+        first.start();
+        assertTrue(ollama.started.await(2, TimeUnit.SECONDS));
+
+        service.cancel();
+        assertEquals(1, service.catalog().messages().size());
+        assertEquals("user", service.catalog().messages().get(0).role());
+        assertEquals("Waiting", service.catalog().messages().get(0).text());
+        assertEquals(ChatTurn.STOPPED, service.catalog().messages().get(0).status());
+
+        ollama.gate.countDown();
+        first.join(2_000);
+        assertFalse(first.isAlive());
+        service.send(new SendCommand("ollama", "local-model", false, "Next"));
+        assertEquals(List.of("Waiting", "Next"), ollama.seen.get(ollama.seen.size() - 1).stream().map(ChatTurn::text).toList());
+        assertEquals(3, service.catalog().messages().size());
+        assertEquals(ChatTurn.COMPLETE, service.catalog().messages().get(2).status());
+        assertEquals(ChatTurn.STOPPED, service.catalog().messages().get(0).status());
     }
 
     @Test
@@ -210,6 +261,7 @@ class ConversationServiceTest {
             assertTrue(systemPrompt.contains("EVA"));
             onDelta.accept("Re");
             if (cancelOnDelta) {
+                onDelta.accept("LATE");
                 return new Reply(id.wire(), model, "Reply " + calls.get(), null);
             }
             onDelta.accept("ply " + calls.get());

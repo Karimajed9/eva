@@ -82,9 +82,12 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
         <div className="transcript" ref={transcript} aria-live="polite">
           {conversation.messages.length === 0 ? <p className="empty-copy">{conversation.detail}</p> : null}
           {conversation.messages.map((message, index) => (
-            <p key={`${message.role}-${index}`} className={`bubble ${message.role}`} data-role={message.role}>
-              {message.text}
-            </p>
+            <div key={`${message.role}-${index}`} className="turn">
+              <p className={`bubble ${message.role}`} data-role={message.role} data-status={message.status}>
+                {message.text}
+              </p>
+              {message.status === "stopped" ? <p className="status-copy">Stopped</p> : null}
+            </div>
           ))}
           {conversation.messages.length > 0 ? <p className="status-copy">{conversation.detail}</p> : null}
         </div>

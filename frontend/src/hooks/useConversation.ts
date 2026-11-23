@@ -48,6 +48,7 @@ export function useConversation(coreState: BackendState): ConversationView {
   const loaded = useRef(false);
   const provisional = useRef(false);
   const lastSeq = useRef(0);
+  const stopWait = useRef<Promise<void> | null>(null);
 
   function applyCatalog(catalog: ConversationCatalog, selected = provider): void {
     setProviders(catalog.providers);
@@ -127,10 +128,10 @@ export function useConversation(coreState: BackendState): ConversationView {
         const next = current.slice();
         const last = next[next.length - 1];
         if (last?.role === "assistant") {
-          next[next.length - 1] = { role: "assistant", text: last.text + delta.text };
+          next[next.length - 1] = { role: "assistant", text: last.text + delta.text, status: "complete" };
           return next;
         }
-        next.push({ role: "assistant", text: delta.text });
+        next.push({ role: "assistant", text: delta.text, status: "complete" });
         return next;
       });
     });
@@ -153,18 +154,42 @@ export function useConversation(coreState: BackendState): ConversationView {
     });
   }
 
-  async function syncTranscript(): Promise<void> {
+  function markStopped(current: ConversationMessage[]): ConversationMessage[] {
+    const next = current.slice();
+    const last = next[next.length - 1];
+    if (!last) {
+      return next;
+    }
+    if (last.role === "assistant") {
+      if (last.text.trim().length === 0) {
+        next.pop();
+      } else {
+        next[next.length - 1] = { ...last, status: "stopped" };
+        return next;
+      }
+    }
+    const question = next[next.length - 1];
+    if (question?.role === "user") {
+      next[next.length - 1] = { ...question, status: "stopped" };
+    }
+    return next;
+  }
+
+  async function syncTranscript(epoch = generation.current): Promise<void> {
     const api = window.eva;
-    if (!api) {
+    if (!api || generation.current !== epoch) {
       return;
     }
     try {
       const result = await api.getConversation();
+      if (generation.current !== epoch) {
+        return;
+      }
       if ("providers" in result) {
         setMessages(result.messages);
       }
     } catch {
-      // The local drop already removed text that was not committed.
+      // The local transcript already shows the text that was kept.
     }
   }
 
@@ -190,8 +215,11 @@ export function useConversation(coreState: BackendState): ConversationView {
   }
 
   async function send(text: string): Promise<boolean> {
-    const api = window.eva;
     const trimmed = text.trim();
+    if (stopWait.current) {
+      await stopWait.current;
+    }
+    const api = window.eva;
     if (!api || sending.current || phase === "generating" || phase === "loading" || trimmed.length === 0 || model.length === 0) {
       return false;
     }
@@ -205,7 +233,7 @@ export function useConversation(coreState: BackendState): ConversationView {
     const requestId = ++generation.current;
     lastSeq.current = 0;
     provisional.current = true;
-    setMessages((current) => [...current, { role: "user", text: trimmed }]);
+    setMessages((current) => [...current, { role: "user", text: trimmed, status: "complete" }]);
     setPhase("generating");
     setOrb("processing");
     setDetail("EVA is writing a reply.");
@@ -217,13 +245,21 @@ export function useConversation(coreState: BackendState): ConversationView {
         text: trimmed,
       });
       if (requestId !== generation.current) {
-        return false;
+        return true;
       }
       if (!result.ok) {
+        if (result.code === "cancelled") {
+          provisional.current = false;
+          setMessages((current) => markStopped(current));
+          setPhase("idle");
+          setOrb("idle");
+          setDetail("Stopped.");
+          return true;
+        }
         dropProvisional();
         await syncTranscript();
-        setPhase(result.code === "unavailable" ? "disconnected" : result.code === "cancelled" ? "idle" : "error");
-        setOrb(result.code === "cancelled" ? "idle" : "error");
+        setPhase(result.code === "unavailable" ? "disconnected" : "error");
+        setOrb("error");
         setDetail(result.detail);
         return false;
       }
@@ -232,10 +268,10 @@ export function useConversation(coreState: BackendState): ConversationView {
         const next = current.slice();
         const last = next[next.length - 1];
         if (last?.role === "assistant") {
-          next[next.length - 1] = { role: "assistant", text: result.text };
+          next[next.length - 1] = { role: "assistant", text: result.text, status: "complete" };
           return next;
         }
-        next.push({ role: "assistant", text: result.text });
+        next.push({ role: "assistant", text: result.text, status: "complete" });
         return next;
       });
       setUsage(result.usage);
@@ -245,7 +281,7 @@ export function useConversation(coreState: BackendState): ConversationView {
       return true;
     } catch {
       if (requestId !== generation.current) {
-        return false;
+        return true;
       }
       dropProvisional();
       setPhase("error");
@@ -253,7 +289,9 @@ export function useConversation(coreState: BackendState): ConversationView {
       setDetail("The reply could not be shown.");
       return false;
     } finally {
-      sending.current = false;
+      if (requestId === generation.current) {
+        sending.current = false;
+      }
     }
   }
 
@@ -279,14 +317,25 @@ export function useConversation(coreState: BackendState): ConversationView {
   }
 
   function cancel(): void {
-    generation.current += 1;
-    dropProvisional();
+    if (!provisional.current) {
+      return;
+    }
+    const epoch = ++generation.current;
+    provisional.current = false;
+    setMessages((current) => markStopped(current));
     setPhase("idle");
     setOrb("idle");
-    setDetail("The reply was cancelled.");
-    void window.eva?.cancelConversation().finally(() => {
-      void syncTranscript();
+    setUsage(null);
+    setDetail("Stopped.");
+    const api = window.eva;
+    const pending = (api ? api.cancelConversation() : Promise.resolve()).finally(() => {
+      if (stopWait.current === pending) {
+        sending.current = false;
+        stopWait.current = null;
+      }
     });
+    stopWait.current = pending;
+    void pending.then(() => syncTranscript(epoch));
   }
 
   return {

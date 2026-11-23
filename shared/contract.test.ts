@@ -117,12 +117,24 @@ describe("conversation contract", () => {
 
   it("accepts a catalog and rejects a credential-shaped extra field", () => {
     expect(parseConversationCatalog({
-      messages: [{ role: "user", text: "Hello" }],
+      messages: [{ role: "user", text: "Hello", status: "complete" }],
       providers: [provider, openai],
     })?.providers[0].id).toBe("ollama");
     expect(parseConversationCatalog({
       messages: [],
       providers: [{ ...provider, apiKey: "secret" }, openai],
+    })).toBeNull();
+    expect(parseConversationCatalog({
+      messages: [{ role: "assistant", text: "Partial", status: "stopped" }],
+      providers: [provider, openai],
+    })?.messages).toEqual([{ role: "assistant", text: "Partial", status: "stopped" }]);
+    expect(parseConversationCatalog({
+      messages: [{ role: "user", text: "Hello" }],
+      providers: [provider, openai],
+    })).toBeNull();
+    expect(parseConversationCatalog({
+      messages: [{ role: "assistant", text: "   ", status: "stopped" }],
+      providers: [provider, openai],
     })).toBeNull();
   });
 

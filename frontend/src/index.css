@@ -560,6 +560,12 @@ textarea {
   letter-spacing: 0.04em;
 }
 
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .bubble {
   max-width: 95%;
   margin: 0;
