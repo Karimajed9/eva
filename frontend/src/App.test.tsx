@@ -218,6 +218,46 @@ describe("EVA interface", () => {
     expect(screen.getByTestId("usage")).toHaveTextContent(/\$0\.0002/);
   });
 
+  it("selects GPT-6 Luna when OpenAI is chosen and leaves the other models selectable", async () => {
+    const source = catalog();
+    source.providers[1] = {
+      ...source.providers[1],
+      models: [
+        { id: "gpt-4o-mini", label: "GPT-4o mini" },
+        { id: "gpt-4o", label: "GPT-4o" },
+        { id: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+        { id: "gpt-6-luna", label: "GPT-6 Luna" },
+      ],
+    };
+    const tracker = installBridge({ catalog: source });
+    render(<App />);
+    await waitFor(() => expect(screen.getByLabelText("Model")).toHaveValue("llama3.2"));
+    expect(screen.getByLabelText("Provider")).toHaveValue("ollama");
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-6-luna");
+    expect(screen.getByRole("checkbox", { name: "Send messages to OpenAI" })).not.toBeChecked();
+    expect(screen.getByRole("option", { name: "GPT-4o mini" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "GPT-4.1 mini" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Send messages to OpenAI" }));
+    await sendDraft("Hello Luna");
+    await waitFor(() => expect(tracker.sent).toHaveLength(1));
+    expect(tracker.sent[0]).toMatchObject({ provider: "openai", model: "gpt-6-luna", cloudEnabled: true });
+
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "gpt-4o" } });
+    await sendDraft("Use GPT-4o");
+    await waitFor(() => expect(tracker.sent).toHaveLength(2));
+    expect(tracker.sent[1]).toMatchObject({ provider: "openai", model: "gpt-4o", cloudEnabled: true });
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "ollama" } });
+    expect(screen.getByLabelText("Provider")).toHaveValue("ollama");
+    expect(screen.getByLabelText("Model")).toHaveValue("llama3.2");
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-6-luna");
+  });
+
   it("shows a provider error without leaving the HUD", async () => {
     installBridge({
       send: async () => ({ ok: false, code: "provider-error", detail: "The model did not answer." }),

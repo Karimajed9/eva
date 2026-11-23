@@ -13,6 +13,14 @@ export type PanelPhase = "loading" | "generating" | "error" | "disconnected" | "
 export type OrbPhase = "idle" | "processing" | "responding" | "error";
 
 const bridgeDetail = "Desktop bridge unavailable. Launch EVA with the Electron shell.";
+const cloudDefaultModel = "gpt-6-luna";
+
+function modelFor(next: ConversationProvider, models: { id: string }[]): string {
+  if (next === "openai" && models.some((item) => item.id === cloudDefaultModel)) {
+    return cloudDefaultModel;
+  }
+  return models[0]?.id ?? "";
+}
 
 export interface ConversationView {
   phase: PanelPhase;
@@ -203,7 +211,7 @@ export function useConversation(coreState: BackendState): ConversationView {
     if (!status) {
       return;
     }
-    setModel(status.models[0]?.id ?? "");
+    setModel(modelFor(next, status.models));
     setDetail(status.detail);
     if (next === "ollama" && !status.reachable) {
       setPhase("disconnected");
