@@ -37,7 +37,7 @@ The core is a Spring Boot 4 application on Java 21. Every route, including conve
 - `GET /api/health` returns `{ status, service, version, timestamp }`.
 - `POST /api/shutdown` asks the process to exit after the response is sent.
 - `GET /api/conversation` returns the in-memory transcript and the provider catalog.
-- `POST /api/conversation` sends one message to the selected provider and streams newline-delimited JSON events: `delta` pieces, then one `done` event with the full text and usage, or an `error` event. Validation failures such as `cloud-denied` are still a single JSON error and do not open a stream.
+- `POST /api/conversation` sends one message to the selected provider and streams newline-delimited JSON events: `delta` pieces, then one `done` event with the full text and usage, or an `error` event. Each line is flushed before the next chunk is produced. Spring Framework 7 otherwise ignores `flush()` on a `StreamingResponseBody` (`spring.http.response.flush.enabled` in `spring.properties`), and the whole reply would arrive in one block. Validation failures such as `cloud-denied` are still a single JSON error and do not open a stream.
 - `POST /api/conversation/reset` drops the transcript.
 - `POST /api/conversation/cancel` cancels the in-flight reply when the provider call can be interrupted.
 

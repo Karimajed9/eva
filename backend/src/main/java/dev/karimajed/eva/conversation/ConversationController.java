@@ -2,6 +2,7 @@ package dev.karimajed.eva.conversation;
 
 import dev.karimajed.eva.conversation.ConversationModels.Reply;
 import dev.karimajed.eva.conversation.ConversationModels.SendCommand;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Map;
 import org.springframework.http.MediaType;
@@ -30,7 +31,7 @@ public class ConversationController {
     }
 
     @PostMapping(produces = "application/x-ndjson")
-    public ResponseEntity<StreamingResponseBody> send(@RequestBody SendCommand command) {
+    public ResponseEntity<StreamingResponseBody> send(@RequestBody SendCommand command, HttpServletResponse response) {
         ConversationService.Prepared prepared = conversations.prepare(command);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("application/x-ndjson"))
@@ -42,14 +43,17 @@ public class ConversationController {
                         Reply reply = conversations.emit(prepared, text -> {
                             try {
                                 lines.delta(text);
+                                response.flushBuffer();
                             } catch (IOException exception) {
                                 throw new ConversationException("cancelled", 409, "The reply stream closed before it finished.");
                             }
                         });
                         lines.done(reply);
+                        response.flushBuffer();
                     } catch (ConversationException exception) {
                         try {
                             lines.error(exception);
+                            response.flushBuffer();
                         } catch (IOException ignored) {
                             // The client is already gone, and the in-flight reply was released.
                         }
