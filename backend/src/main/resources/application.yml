@@ -13,6 +13,9 @@ server:
       enabled: false
 
 spring:
+  mvc:
+    async:
+      request-timeout: 95s
   main:
     banner-mode: console
   web:

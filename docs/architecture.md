@@ -37,7 +37,7 @@ The core is a Spring Boot 4 application on Java 21. Every route, including conve
 - `GET /api/health` returns `{ status, service, version, timestamp }`.
 - `POST /api/shutdown` asks the process to exit after the response is sent.
 - `GET /api/conversation` returns the in-memory transcript and the provider catalog.
-- `POST /api/conversation` sends one message to the selected provider and returns the complete reply.
+- `POST /api/conversation` sends one message to the selected provider and streams newline-delimited JSON events: `delta` pieces, then one `done` event with the full text and usage, or an `error` event. Each line is flushed before the next chunk is produced. Spring Framework 7 otherwise ignores `flush()` on a `StreamingResponseBody` (`spring.http.response.flush.enabled` in `spring.properties`), and the whole reply would arrive in one block. Validation failures such as `cloud-denied` are still a single JSON error and do not open a stream.
 - `POST /api/conversation/reset` drops the transcript.
 - `POST /api/conversation/cancel` cancels the in-flight reply when the provider call can be interrupted.
 
@@ -56,7 +56,7 @@ The process refuses to start when `EVA_SESSION_TOKEN` is missing, shorter than 3
 
 `EVA_OPENAI_API_KEY` is optional. When it is present, the same startup step copies it onto a credential bean, removes it from Spring's property sources, and arms the log filter for values of at least 16 characters. Provider errors return a fixed detail string. Exception text from the cloud SDK is not copied into the response, because that text can contain request data.
 
-Ollama's base URL is `EVA_OLLAMA_BASE_URL`, defaulting to `http://127.0.0.1:11434`. It must be an `http` loopback URL with no user info and no path. Discovery is `GET /api/tags` with an 800 millisecond timeout. Chat is `POST /api/chat` with `stream` set to false and a 90 second timeout. EVA never calls `/api/pull`. OpenAI uses LangChain4j `OpenAiChatModel` with a 45 second timeout, `maxRetries` of 0, and request and response logging off. The cloud model list is a static allowlist (`gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, and `gpt-6-luna`), so describing OpenAI does not contact the network. GPT-6 Luna is requested with reasoning effort `none`. The other allowlisted models do not set a reasoning effort. Cost estimates use the completion token count, and add reported reasoning tokens only when that count is larger than the completion count.
+Ollama's base URL is `EVA_OLLAMA_BASE_URL`, defaulting to `http://127.0.0.1:11434`. It must be an `http` loopback URL with no user info and no path. Discovery is `GET /api/tags` with an 800 millisecond timeout. Chat is `POST /api/chat` with `stream` set to true and a 90 second timeout. EVA never calls `/api/pull`. OpenAI uses LangChain4j `OpenAiStreamingChatModel` with a 45 second timeout and request and response logging off. The cloud model list is a static allowlist (`gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, and `gpt-6-luna`), so describing OpenAI does not contact the network. Choosing OpenAI in the panel selects `gpt-6-luna`. Ollama is still the provider selected when the window opens, and every allowlisted model stays selectable. GPT-6 Luna is requested with reasoning effort `none`. The other allowlisted models do not set a reasoning effort. Cost estimates use the final usage object. The completion count includes reported reasoning tokens when that count is larger than the completion count. Deltas are not logged.
 
 ## Startup and shutdown
 
@@ -74,9 +74,11 @@ A pid file in the temp directory records the backend pid and port, never the tok
 
 The personality text is `backend/src/main/resources/personality/eva-system-prompt.txt`. It is loaded once and passed as the system message. Application code does not embed a second prompt, and the request does not add account, file, or device data.
 
-Context is the Java list of user and assistant turns. It is committed only after a successful reply. Reset increments a generation counter so an in-flight reply cannot be appended. A second send while one is in flight returns `busy`. Bounds are 4,000 characters per message, 16 turns, and 8,000 characters of history.
+Context is the Java list of user and assistant turns. A finished reply is committed only after it completes, with status `complete`. Reset increments a generation counter so an in-flight reply cannot be appended as a finished answer. A second send while one is in flight returns `busy`. Bounds are 4,000 characters per message, 16 turns, and 8,000 characters of history.
 
-The Electron bridge is still request and response. The renderer waits for the complete reply. Streaming was not added, because the existing IPC shape is one invoke and one result. Cancel increments the generation and calls the provider cancel token. A reply that arrives after cancel or reset is discarded.
+Stopping a reply keeps the user question in that list. Text already produced is stored on the assistant turn with status `stopped`, which is not a completed response. If nothing was produced, the user turn is stored with status `stopped` and there is no assistant turn. Stopped assistant text stays visible in the catalog React shows. It is left out of the next model request. The user question is included. React does not keep a second history: after stop it shows the catalog Java stored, and Java builds the next provider request from that catalog by dropping assistant turns whose status is `stopped`.
+
+Electron reads the newline-delimited stream on the loopback connection and forwards each new `delta` to the trusted renderer on `eva:conversation:event`. The invoke resolves with the final reply. The renderer appends a sequence number once and replaces the bubble with the final text, so a repeated chunk is not shown twice. Stop aborts the desktop read, asks Java to cancel the upstream call, and ignores later chunks. The input is cleared. The orb returns to `idle`. The question and any partial text stay on screen, marked Stopped.
 
 The HUD keeps the Milestone 1 layout. The conversation panel shows the active provider, local or cloud, the selected model, bubbles, errors, and token or cost figures when the provider returned usage. The orb's `data-phase` is `idle`, `processing`, `responding`, or `error`. `data-state` is still the core connection, not the model. The activity panel remains a local shell feed and still says it is not connected to AI.
 
@@ -107,7 +109,7 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 - A process running as the same desktop user can read the Java process environment and present the session token or the OpenAI key.
 - Loopback HTTP is not encrypted. Local software can observe it, including a conversation with Ollama.
 - Conversation context is memory only. It is gone after reset, shutdown, or a crash. There is no database.
-- Replies are not streamed. Cancel is best-effort: the provider may still finish the HTTP call, and EVA then drops the text.
+- Stop keeps the question and any partial text already produced. That partial text is marked stopped and is not sent as a completed answer on the next request. The question is sent.
 - Ollama must already be running and the model must already be installed. EVA will not start Ollama or pull a model.
 - OpenAI cost is an estimate from a small rate table, and only when the API returns token counts. It is not an invoice.
 - The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered. Separately, GPT-6 Luna was live-tested once through EVA with a real OpenAI key, and that send succeeded. No other OpenAI model has been live-tested.

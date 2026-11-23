@@ -4,11 +4,13 @@ import {
   parseAppInfo,
   parseBackendStatus,
   parseCatalogResult,
+  parseConversationDelta,
   parseConversationRequest,
   parseConversationResult,
   type AppInfo,
   type BackendStatus,
   type CatalogResult,
+  type ConversationDelta,
   type ConversationRequest,
   type ConversationResult,
 } from "../../shared/contract";
@@ -70,6 +72,21 @@ const eva = {
   },
   async cancelConversation(): Promise<void> {
     await ipcRenderer.invoke(IpcChannel.cancelConversation);
+  },
+  subscribeConversation(listener: (delta: ConversationDelta) => void): () => void {
+    if (typeof listener !== "function") {
+      throw new Error("Conversation listener must be a function.");
+    }
+    const wrapped = (_event: IpcRendererEvent, payload: unknown) => {
+      const parsed = parseConversationDelta(payload);
+      if (parsed) {
+        listener(parsed);
+      }
+    };
+    ipcRenderer.on(IpcChannel.conversationEvent, wrapped);
+    return () => {
+      ipcRenderer.removeListener(IpcChannel.conversationEvent, wrapped);
+    };
   },
 };
 

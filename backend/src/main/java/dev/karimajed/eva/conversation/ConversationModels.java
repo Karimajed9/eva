@@ -31,7 +31,24 @@ public final class ConversationModels {
         }
     }
 
-    public record ChatTurn(String role, String text) {
+    public record ChatTurn(String role, String text, String status) {
+
+        public static final String COMPLETE = "complete";
+        public static final String STOPPED = "stopped";
+
+        public ChatTurn {
+            if (!COMPLETE.equals(status) && !STOPPED.equals(status)) {
+                throw new IllegalArgumentException("A turn status must be complete or stopped.");
+            }
+        }
+
+        public ChatTurn(String role, String text) {
+            this(role, text, COMPLETE);
+        }
+
+        public boolean stopped() {
+            return STOPPED.equals(status);
+        }
     }
 
     public record ModelChoice(String id, String label) {

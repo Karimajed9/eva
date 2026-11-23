@@ -1,14 +1,11 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import {
   IpcChannel,
-  isRecord,
   parseConversationCatalog,
   parseConversationRequest,
-  parseConversationResult,
   SHELL_NAME,
   type AppInfo,
   type ConversationFailure,
-  type ConversationResult,
 } from "../../shared/contract";
 import type { BackendManager } from "./backend-manager";
 import { isTrustedRendererUrl, type RendererTrustOptions } from "./trusted-renderer";
@@ -49,8 +46,12 @@ export function registerIpc(manager: BackendManager, options: IpcOptions): void 
     if (!request) {
       return invalidConversation();
     }
-    const result = await manager.core("POST", "/api/conversation", request);
-    return conversationResult(result);
+    const sender = event.sender;
+    return manager.streamConversation(request, (delta) => {
+      if (!sender.isDestroyed()) {
+        sender.send(IpcChannel.conversationEvent, delta);
+      }
+    });
   });
 
   ipcMain.handle(IpcChannel.resetConversation, async (event) => {
@@ -64,6 +65,7 @@ export function registerIpc(manager: BackendManager, options: IpcOptions): void 
 
   ipcMain.handle(IpcChannel.cancelConversation, async (event) => {
     assertTrustedSender(event, options);
+    manager.abortActiveStream();
     const result = await manager.core("POST", "/api/conversation/cancel");
     if ("ok" in result) {
       return result;
@@ -74,22 +76,6 @@ export function registerIpc(manager: BackendManager, options: IpcOptions): void 
 
 function invalidConversation(): ConversationFailure {
   return { ok: false, code: "invalid", detail: "The conversation response did not match the contract." };
-}
-
-function conversationResult(result: { status: number; json: unknown } | ConversationFailure): ConversationResult {
-  if ("ok" in result) {
-    return result;
-  }
-  if (!isRecord(result.json)) {
-    return invalidConversation();
-  }
-  return parseConversationResult({
-    ok: true,
-    provider: result.json.provider,
-    model: result.json.model,
-    text: result.json.text,
-    usage: result.json.usage ?? null,
-  }) ?? invalidConversation();
 }
 
 export function assertTrustedSender(event: IpcMainInvokeEvent, options: IpcOptions): void {

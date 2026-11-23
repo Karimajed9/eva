@@ -88,6 +88,7 @@ function installBridge(options: {
     cancelConversation: async () => {
       tracker.cancelled += 1;
     },
+    subscribeConversation: () => () => {},
   };
   return tracker;
 }
@@ -95,6 +96,34 @@ function installBridge(options: {
 afterEach(() => {
   delete window.eva;
 });
+
+function stubTranscript(node: HTMLElement) {
+  let scrollTop = 0;
+  let scrollHeight = 240;
+  const clientHeight = 80;
+  const bottom = () => Math.max(0, scrollHeight - clientHeight);
+  Object.defineProperty(node, "scrollHeight", { configurable: true, get: () => scrollHeight });
+  Object.defineProperty(node, "clientHeight", { configurable: true, get: () => clientHeight });
+  Object.defineProperty(node, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set(value: number) {
+      scrollTop = Math.min(Math.max(0, value), bottom());
+      node.dispatchEvent(new Event("scroll"));
+    },
+  });
+  return {
+    get top() {
+      return scrollTop;
+    },
+    get bottom() {
+      return bottom();
+    },
+    grow(height: number) {
+      scrollHeight = height;
+    },
+  };
+}
 
 async function sendDraft(text: string): Promise<void> {
   fireEvent.change(screen.getByLabelText("Message"), { target: { value: text } });
@@ -142,6 +171,7 @@ describe("EVA interface", () => {
       sendConversation: async (request) => reply(request),
       resetConversation: async () => catalog(),
       cancelConversation: async () => {},
+      subscribeConversation: () => () => {},
     };
 
     render(<App />);
@@ -216,6 +246,46 @@ describe("EVA interface", () => {
     expect(screen.getByTestId("usage")).toHaveTextContent(/\$0\.0002/);
   });
 
+  it("selects GPT-6 Luna when OpenAI is chosen and leaves the other models selectable", async () => {
+    const source = catalog();
+    source.providers[1] = {
+      ...source.providers[1],
+      models: [
+        { id: "gpt-4o-mini", label: "GPT-4o mini" },
+        { id: "gpt-4o", label: "GPT-4o" },
+        { id: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+        { id: "gpt-6-luna", label: "GPT-6 Luna" },
+      ],
+    };
+    const tracker = installBridge({ catalog: source });
+    render(<App />);
+    await waitFor(() => expect(screen.getByLabelText("Model")).toHaveValue("llama3.2"));
+    expect(screen.getByLabelText("Provider")).toHaveValue("ollama");
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-6-luna");
+    expect(screen.getByRole("checkbox", { name: "Send messages to OpenAI" })).not.toBeChecked();
+    expect(screen.getByRole("option", { name: "GPT-4o mini" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "GPT-4.1 mini" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Send messages to OpenAI" }));
+    await sendDraft("Hello Luna");
+    await waitFor(() => expect(tracker.sent).toHaveLength(1));
+    expect(tracker.sent[0]).toMatchObject({ provider: "openai", model: "gpt-6-luna", cloudEnabled: true });
+
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "gpt-4o" } });
+    await sendDraft("Use GPT-4o");
+    await waitFor(() => expect(tracker.sent).toHaveLength(2));
+    expect(tracker.sent[1]).toMatchObject({ provider: "openai", model: "gpt-4o", cloudEnabled: true });
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "ollama" } });
+    expect(screen.getByLabelText("Provider")).toHaveValue("ollama");
+    expect(screen.getByLabelText("Model")).toHaveValue("llama3.2");
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-6-luna");
+  });
+
   it("shows a provider error without leaving the HUD", async () => {
     installBridge({
       send: async () => ({ ok: false, code: "provider-error", detail: "The model did not answer." }),
@@ -238,7 +308,7 @@ describe("EVA interface", () => {
     expect(tracker.sent).toHaveLength(0);
   });
 
-  it("resets the transcript and ignores a cancelled reply", async () => {
+  it("keeps the question when a late reply arrives after stop", async () => {
     let finish: (result: ConversationResult) => void = () => {};
     const tracker = installBridge({
       send: (request) => new Promise((resolve) => {
@@ -246,6 +316,16 @@ describe("EVA interface", () => {
         void request;
       }),
     });
+    const kept = catalog();
+    window.eva = {
+      ...window.eva!,
+      getConversation: async () => kept,
+      cancelConversation: async () => {
+        tracker.cancelled += 1;
+        kept.messages = [{ role: "user", text: "Wait for this", status: "stopped" }];
+        finish({ ok: false, code: "cancelled", detail: "The reply was cancelled." });
+      },
+    };
     render(<App />);
     await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
     await sendDraft("Wait for this");
@@ -255,7 +335,10 @@ describe("EVA interface", () => {
     await act(async () => {
       finish(reply({ provider: "ollama", model: "llama3.2", cloudEnabled: false, text: "Wait for this" }, "Too late"));
     });
+    expect(await screen.findByText("Wait for this")).toBeInTheDocument();
     expect(screen.queryByText("Too late")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-role='assistant']")).toBeNull();
+    expect(screen.getByLabelText("Message")).toHaveValue("");
   });
 
   it("sends on Enter and keeps Shift+Enter in the message box", async () => {
@@ -278,6 +361,213 @@ describe("EVA interface", () => {
     expect(tracker.sent).toHaveLength(1);
     expect(tracker.sent[0]).toMatchObject({ provider: "ollama", text: "line one" });
     expect(message).toHaveValue("");
+  });
+
+  it("keeps streamed text once when generation stops and sends the next question", async () => {
+    let emit: (delta: { type: "delta"; seq: number; text: string }) => void = () => {};
+    let finish: (result: ConversationResult) => void = () => {};
+    let turn = 0;
+    const kept = catalog();
+    const tracker = installBridge({
+      send: (request) => {
+        turn += 1;
+        if (turn > 1) {
+          return Promise.resolve(reply(request, "Second answer"));
+        }
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    });
+    window.eva = {
+      ...window.eva!,
+      getConversation: async () => ({ ...kept, messages: kept.messages.map((message) => ({ ...message })) }),
+      subscribeConversation: (listener) => {
+        emit = listener;
+        return () => {
+          emit = () => {};
+        };
+      },
+      cancelConversation: async () => {
+        tracker.cancelled += 1;
+        kept.messages = [
+          { role: "user", text: "Stream this", status: "complete" },
+          { role: "assistant", text: "Hello from EVA.", status: "stopped" },
+        ];
+        finish({ ok: false, code: "cancelled", detail: "The reply was cancelled." });
+      },
+    };
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Stream this" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Stream this")).toBeInTheDocument();
+    act(() => {
+      emit({ type: "delta", seq: 1, text: "Hello " });
+      emit({ type: "delta", seq: 1, text: "NO" });
+      emit({ type: "delta", seq: 2, text: "from EVA." });
+    });
+    expect(await screen.findByText("Hello from EVA.")).toBeInTheDocument();
+    expect(screen.queryByText(/NO/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "responding");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(tracker.cancelled).toBe(1);
+    expect(await screen.findByText("Stopped")).toBeInTheDocument();
+    expect(screen.getByText("Stream this")).toHaveAttribute("data-role", "user");
+    expect(screen.getByText("Hello from EVA.")).toHaveAttribute("data-status", "stopped");
+    expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "idle");
+    expect(screen.getByLabelText("Message")).toHaveValue("");
+    act(() => {
+      emit({ type: "delta", seq: 3, text: "LATE" });
+    });
+    expect(screen.queryByText(/LATE/)).not.toBeInTheDocument();
+    expect(screen.getByText("Hello from EVA.")).toHaveTextContent("Hello from EVA.");
+
+    await sendDraft("Next question");
+    expect(await screen.findByText("Second answer")).toBeInTheDocument();
+    expect(tracker.sent).toHaveLength(2);
+    expect(tracker.sent[1]).toMatchObject({ provider: "ollama", cloudEnabled: false, text: "Next question" });
+    expect(screen.getByText("Stream this")).toBeInTheDocument();
+    expect(screen.getByLabelText("Message")).toHaveValue("");
+  });
+
+  it("shows stopped without an assistant bubble when nothing was generated", async () => {
+    let finish: (result: ConversationResult) => void = () => {};
+    const kept = catalog();
+    const tracker = installBridge({
+      send: () => new Promise((resolve) => {
+        finish = resolve;
+      }),
+    });
+    window.eva = {
+      ...window.eva!,
+      getConversation: async () => ({ ...kept, messages: kept.messages.map((message) => ({ ...message })) }),
+      cancelConversation: async () => {
+        tracker.cancelled += 1;
+        kept.messages = [{ role: "user", text: "Just the question", status: "stopped" }];
+        finish({ ok: false, code: "cancelled", detail: "The reply was cancelled." });
+      },
+    };
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
+    await sendDraft("Just the question");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByText("Stopped")).toBeInTheDocument();
+    expect(screen.getByText("Just the question")).toHaveAttribute("data-status", "stopped");
+    expect(document.querySelector("[data-role='assistant']")).toBeNull();
+    expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "idle");
+    expect(screen.getByLabelText("Message")).toHaveValue("");
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
+    expect(screen.getByRole("checkbox", { name: "Send messages to OpenAI" })).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Do not send this" } });
+    fireEvent.submit(screen.getByRole("form", { name: "Send a message" }));
+    expect(tracker.sent).toHaveLength(1);
+    expect(tracker.sent[0]).toMatchObject({ provider: "ollama", cloudEnabled: false });
+    expect(screen.getByText(/nothing was sent/i)).toBeInTheDocument();
+  });
+
+  it("follows a generating reply until the reader leaves the bottom", async () => {
+    let emit: (delta: { type: "delta"; seq: number; text: string }) => void = () => {};
+    let finish: (result: ConversationResult) => void = () => {};
+    let turn = 0;
+    const tracker = installBridge({
+      send: (request) => {
+        turn += 1;
+        if (turn > 1) {
+          return Promise.resolve(reply(request, "Second answer"));
+        }
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    });
+    window.eva = {
+      ...window.eva!,
+      subscribeConversation: (listener) => {
+        emit = listener;
+        return () => {
+          emit = () => {};
+        };
+      },
+    };
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
+    const transcript = document.querySelector(".transcript");
+    if (!(transcript instanceof HTMLElement)) {
+      throw new Error("The transcript is missing.");
+    }
+    const scroll = stubTranscript(transcript);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Follow this" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Follow this")).toBeInTheDocument();
+    expect(scroll.top).toBe(scroll.bottom);
+
+    scroll.grow(480);
+    act(() => {
+      emit({ type: "delta", seq: 1, text: "Hello " });
+    });
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    expect(scroll.top).toBe(scroll.bottom);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+
+    act(() => {
+      transcript.scrollTop = 0;
+    });
+    expect(screen.getByRole("button", { name: "Scroll to bottom" })).toBeInTheDocument();
+    const parked = scroll.top;
+    scroll.grow(720);
+    act(() => {
+      emit({ type: "delta", seq: 2, text: "from EVA." });
+    });
+    expect(screen.getByText("Hello from EVA.")).toBeInTheDocument();
+    expect(scroll.top).toBe(parked);
+
+    act(() => {
+      transcript.scrollTop = transcript.scrollHeight;
+    });
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+    scroll.grow(900);
+    act(() => {
+      emit({ type: "delta", seq: 3, text: " Still writing." });
+    });
+    expect(scroll.top).toBe(scroll.bottom);
+
+    act(() => {
+      transcript.scrollTop = 0;
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Scroll to bottom" }));
+    expect(scroll.top).toBe(scroll.bottom);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+    scroll.grow(1040);
+    act(() => {
+      emit({ type: "delta", seq: 4, text: " Done." });
+    });
+    expect(screen.getByText("Hello from EVA. Still writing. Done.")).toBeInTheDocument();
+    expect(scroll.top).toBe(scroll.bottom);
+
+    act(() => {
+      transcript.scrollTop = 0;
+    });
+    const parkedAfter = scroll.top;
+    scroll.grow(1200);
+    await act(async () => {
+      finish(reply(
+        { provider: "ollama", model: "llama3.2", cloudEnabled: false, text: "Follow this" },
+        "Hello from EVA. Still writing. Done.",
+      ));
+    });
+    expect(scroll.top).toBe(parkedAfter);
+    expect(screen.getByRole("button", { name: "Scroll to bottom" })).toBeInTheDocument();
+
+    await sendDraft("Next question");
+    expect(await screen.findByText("Second answer")).toBeInTheDocument();
+    expect(tracker.sent).toHaveLength(2);
+    expect(scroll.top).toBe(scroll.bottom);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
   });
 
   it("clears the transcript when a new conversation starts", async () => {

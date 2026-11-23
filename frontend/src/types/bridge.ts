@@ -2,6 +2,7 @@ import type {
   AppInfo,
   BackendStatus,
   CatalogResult,
+  ConversationDelta,
   ConversationRequest,
   ConversationResult,
 } from "../../../shared/contract";
@@ -14,6 +15,7 @@ export interface EvaBridge {
   sendConversation(request: ConversationRequest): Promise<ConversationResult>;
   resetConversation(): Promise<CatalogResult>;
   cancelConversation(): Promise<void>;
+  subscribeConversation(listener: (delta: ConversationDelta) => void): () => void;
 }
 
 declare global {

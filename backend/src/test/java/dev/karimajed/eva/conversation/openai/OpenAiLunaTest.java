@@ -71,17 +71,25 @@ class OpenAiLunaTest {
     @Test
     void lunaRequestsReasoningEffortNoneAndExistingModelsDoNot() {
         OpenAiChatModel luna = OpenAiChatProvider.chatModel("unit-test-credential", "gpt-6-luna");
+        dev.langchain4j.model.openai.OpenAiStreamingChatModel streaming =
+                OpenAiChatProvider.streamingModel("unit-test-credential", "gpt-6-luna");
         ChatRequest request = ChatRequest.builder()
                 .messages(List.of(UserMessage.from("Hi")))
                 .build();
         OpenAiChatRequestParameters lunaParameters = OpenAiChatProvider.requestParameters(luna, request);
+        OpenAiChatRequestParameters streamed = OpenAiChatProvider.requestParameters(streaming, request);
         assertEquals("gpt-6-luna", lunaParameters.modelName());
         assertEquals("none", lunaParameters.reasoningEffort());
+        assertEquals("gpt-6-luna", streamed.modelName());
+        assertEquals("none", streamed.reasoningEffort());
 
         OpenAiChatModel mini = OpenAiChatProvider.chatModel("unit-test-credential", "gpt-4o-mini");
         OpenAiChatRequestParameters miniParameters = OpenAiChatProvider.requestParameters(mini, request);
         assertEquals("gpt-4o-mini", miniParameters.modelName());
         assertNull(miniParameters.reasoningEffort());
+        assertNull(OpenAiChatProvider.requestParameters(
+                OpenAiChatProvider.streamingModel("unit-test-credential", "gpt-4o-mini"),
+                request).reasoningEffort());
 
         OpenAiChatModel full = OpenAiChatProvider.chatModel("unit-test-credential", "gpt-4o");
         assertNull(OpenAiChatProvider.requestParameters(full, request).reasoningEffort());
@@ -92,32 +100,41 @@ class OpenAiLunaTest {
     @Test
     void lunaCompletesThroughTheCatalogWithoutCallingOpenAi() {
         AtomicReference<String> seen = new AtomicReference<>();
-        OpenAiChatProvider provider = new OpenAiChatProvider((model, messages, cancel) -> {
+        List<String> deltas = new java.util.ArrayList<>();
+        OpenAiChatProvider provider = new OpenAiChatProvider((model, messages, cancel, onDelta) -> {
             seen.set(model);
+            onDelta.accept("sa");
+            onDelta.accept("ved");
             return new OpenAiChatProvider.CloudResult("saved", 1_000_000, 1_000_000);
         }, true);
-        Reply reply = provider.complete(
+        Reply reply = provider.stream(
                 List.of(new ChatTurn("user", "Hi")),
                 "gpt-6-luna",
                 "You are EVA.",
-                new CancelToken());
+                new CancelToken(),
+                deltas::add);
+        assertEquals(List.of("sa", "ved"), deltas);
         assertEquals("gpt-6-luna", seen.get());
         assertEquals(0.60d, reply.usage().estimatedUsd(), 0.0000001d);
 
-        ConversationException unknown = assertThrows(ConversationException.class, () -> provider.complete(
+        ConversationException unknown = assertThrows(ConversationException.class, () -> provider.stream(
                 List.of(new ChatTurn("user", "Hi")),
                 "gpt-6-luna-preview",
                 "You are EVA.",
-                new CancelToken()));
+                new CancelToken(),
+                ignored -> {
+                }));
         assertEquals("invalid", unknown.code());
         assertEquals("gpt-6-luna", seen.get());
 
         OpenAiChatProvider unconfigured = new OpenAiChatProvider(null, false);
-        ConversationException missing = assertThrows(ConversationException.class, () -> unconfigured.complete(
+        ConversationException missing = assertThrows(ConversationException.class, () -> unconfigured.stream(
                 List.of(new ChatTurn("user", "Hi")),
                 "gpt-6-luna",
                 "You are EVA.",
-                new CancelToken()));
+                new CancelToken(),
+                ignored -> {
+                }));
         assertEquals("credentials", missing.code());
         assertFalse(missing.detail().contains("unit-test-credential"));
     }
