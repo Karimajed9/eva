@@ -1,7 +1,13 @@
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ConversationView } from "../hooks/useConversation";
 import { HudPanel } from "./HudPanel";
+
+const bottomSlack = 8;
+
+function atBottom(node: HTMLElement): boolean {
+  return node.scrollHeight - node.scrollTop - node.clientHeight <= bottomSlack;
+}
 
 interface ConversationPanelProps {
   conversation: ConversationView;
@@ -12,6 +18,9 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
   const [draft, setDraft] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLFormElement>(null);
+  const follow = useRef(true);
+  const generating = useRef(false);
+  const [pinned, setPinned] = useState(true);
   const selected = conversation.providers.find((item) => item.id === conversation.provider);
   const models = selected?.models ?? [];
   const cloudBlocked = conversation.provider === "openai" && !conversation.cloudEnabled;
@@ -22,11 +31,44 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
     || cloudBlocked;
   const location = conversation.provider === "openai" ? "Cloud" : "Local";
 
-  useEffect(() => {
+  function revealBottom(): void {
     const node = transcript.current;
-    if (node) {
+    follow.current = true;
+    if (!node) {
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
+    setPinned(true);
+  }
+
+  useLayoutEffect(() => {
+    const node = transcript.current;
+    if (!node) {
+      return;
+    }
+    const onScroll = () => {
+      const bottom = atBottom(node);
+      follow.current = bottom;
+      setPinned(bottom);
+    };
+    node.addEventListener("scroll", onScroll);
+    return () => node.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useLayoutEffect(() => {
+    const node = transcript.current;
+    const active = conversation.phase === "generating";
+    if (active && !generating.current) {
+      follow.current = true;
+    }
+    generating.current = active;
+    if (!node) {
+      return;
+    }
+    if (follow.current) {
       node.scrollTop = node.scrollHeight;
     }
+    setPinned(atBottom(node));
   }, [conversation.messages, conversation.phase]);
 
   return (
@@ -79,17 +121,26 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
             </label>
           </p>
         ) : null}
-        <div className="transcript" ref={transcript} aria-live="polite">
-          {conversation.messages.length === 0 ? <p className="empty-copy">{conversation.detail}</p> : null}
-          {conversation.messages.map((message, index) => (
-            <div key={`${message.role}-${index}`} className="turn">
-              <p className={`bubble ${message.role}`} data-role={message.role} data-status={message.status}>
-                {message.text}
-              </p>
-              {message.status === "stopped" ? <p className="status-copy">Stopped</p> : null}
-            </div>
-          ))}
-          {conversation.messages.length > 0 ? <p className="status-copy">{conversation.detail}</p> : null}
+        <div className="transcript-frame">
+          <div className="transcript" ref={transcript} aria-live="polite">
+            {conversation.messages.length === 0 ? <p className="empty-copy">{conversation.detail}</p> : null}
+            {conversation.messages.map((message, index) => (
+              <div key={`${message.role}-${index}`} className="turn">
+                <p className={`bubble ${message.role}`} data-role={message.role} data-status={message.status}>
+                  {message.text}
+                </p>
+                {message.status === "stopped" ? <p className="status-copy">Stopped</p> : null}
+              </div>
+            ))}
+            {conversation.messages.length > 0 ? <p className="status-copy">{conversation.detail}</p> : null}
+          </div>
+          {pinned ? null : (
+            <button type="button" className="jump-bottom" aria-label="Scroll to bottom" onClick={revealBottom}>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3.5 6.5 8 11l4.5-4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
         </div>
         {conversation.usage ? (
           <p className="usage-line" data-testid="usage">

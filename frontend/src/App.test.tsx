@@ -97,6 +97,34 @@ afterEach(() => {
   delete window.eva;
 });
 
+function stubTranscript(node: HTMLElement) {
+  let scrollTop = 0;
+  let scrollHeight = 240;
+  const clientHeight = 80;
+  const bottom = () => Math.max(0, scrollHeight - clientHeight);
+  Object.defineProperty(node, "scrollHeight", { configurable: true, get: () => scrollHeight });
+  Object.defineProperty(node, "clientHeight", { configurable: true, get: () => clientHeight });
+  Object.defineProperty(node, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set(value: number) {
+      scrollTop = Math.min(Math.max(0, value), bottom());
+      node.dispatchEvent(new Event("scroll"));
+    },
+  });
+  return {
+    get top() {
+      return scrollTop;
+    },
+    get bottom() {
+      return bottom();
+    },
+    grow(height: number) {
+      scrollHeight = height;
+    },
+  };
+}
+
 async function sendDraft(text: string): Promise<void> {
   fireEvent.change(screen.getByLabelText("Message"), { target: { value: text } });
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -438,6 +466,108 @@ describe("EVA interface", () => {
     expect(tracker.sent).toHaveLength(1);
     expect(tracker.sent[0]).toMatchObject({ provider: "ollama", cloudEnabled: false });
     expect(screen.getByText(/nothing was sent/i)).toBeInTheDocument();
+  });
+
+  it("follows a generating reply until the reader leaves the bottom", async () => {
+    let emit: (delta: { type: "delta"; seq: number; text: string }) => void = () => {};
+    let finish: (result: ConversationResult) => void = () => {};
+    let turn = 0;
+    const tracker = installBridge({
+      send: (request) => {
+        turn += 1;
+        if (turn > 1) {
+          return Promise.resolve(reply(request, "Second answer"));
+        }
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    });
+    window.eva = {
+      ...window.eva!,
+      subscribeConversation: (listener) => {
+        emit = listener;
+        return () => {
+          emit = () => {};
+        };
+      },
+    };
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
+    const transcript = document.querySelector(".transcript");
+    if (!(transcript instanceof HTMLElement)) {
+      throw new Error("The transcript is missing.");
+    }
+    const scroll = stubTranscript(transcript);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Follow this" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Follow this")).toBeInTheDocument();
+    expect(scroll.top).toBe(scroll.bottom);
+
+    scroll.grow(480);
+    act(() => {
+      emit({ type: "delta", seq: 1, text: "Hello " });
+    });
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    expect(scroll.top).toBe(scroll.bottom);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+
+    act(() => {
+      transcript.scrollTop = 0;
+    });
+    expect(screen.getByRole("button", { name: "Scroll to bottom" })).toBeInTheDocument();
+    const parked = scroll.top;
+    scroll.grow(720);
+    act(() => {
+      emit({ type: "delta", seq: 2, text: "from EVA." });
+    });
+    expect(screen.getByText("Hello from EVA.")).toBeInTheDocument();
+    expect(scroll.top).toBe(parked);
+
+    act(() => {
+      transcript.scrollTop = transcript.scrollHeight;
+    });
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+    scroll.grow(900);
+    act(() => {
+      emit({ type: "delta", seq: 3, text: " Still writing." });
+    });
+    expect(scroll.top).toBe(scroll.bottom);
+
+    act(() => {
+      transcript.scrollTop = 0;
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Scroll to bottom" }));
+    expect(scroll.top).toBe(scroll.bottom);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
+    scroll.grow(1040);
+    act(() => {
+      emit({ type: "delta", seq: 4, text: " Done." });
+    });
+    expect(screen.getByText("Hello from EVA. Still writing. Done.")).toBeInTheDocument();
+    expect(scroll.top).toBe(scroll.bottom);
+
+    act(() => {
+      transcript.scrollTop = 0;
+    });
+    const parkedAfter = scroll.top;
+    scroll.grow(1200);
+    await act(async () => {
+      finish(reply(
+        { provider: "ollama", model: "llama3.2", cloudEnabled: false, text: "Follow this" },
+        "Hello from EVA. Still writing. Done.",
+      ));
+    });
+    expect(scroll.top).toBe(parkedAfter);
+    expect(screen.getByRole("button", { name: "Scroll to bottom" })).toBeInTheDocument();
+
+    await sendDraft("Next question");
+    expect(await screen.findByText("Second answer")).toBeInTheDocument();
+    expect(tracker.sent).toHaveLength(2);
+    expect(scroll.top).toBe(scroll.bottom);
+    expect(screen.queryByRole("button", { name: "Scroll to bottom" })).not.toBeInTheDocument();
   });
 
   it("clears the transcript when a new conversation starts", async () => {
