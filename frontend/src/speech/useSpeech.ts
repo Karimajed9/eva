@@ -31,7 +31,7 @@ export interface SpeechView {
   cancel: () => void;
 }
 
-export function useSpeech(coreState: BackendState): SpeechView {
+export function useSpeech(coreState: BackendState, beforeStart?: () => void): SpeechView {
   const [phase, setPhase] = useState<SpeechPhase>("idle");
   const [notice, setNotice] = useState("");
   const [level, setLevel] = useState(0);
@@ -217,6 +217,7 @@ export function useSpeech(coreState: BackendState): SpeechView {
   }
 
   function start(): void {
+    beforeStart?.();
     if (armingRef.current || sessionRef.current || phaseRef.current === "recording" || phaseRef.current === "transcribing") {
       return;
     }

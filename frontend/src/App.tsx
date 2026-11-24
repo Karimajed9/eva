@@ -5,19 +5,26 @@ import { Stage } from "./components/Stage";
 import { useConversation } from "./hooks/useConversation";
 import { useAppInfo, useBackendStatus } from "./hooks/useBackendStatus";
 import { useSpeech } from "./speech/useSpeech";
+import { useVoice } from "./speech/useVoice";
 
 export function App() {
   const status = useBackendStatus();
   const conversation = useConversation(status.state);
-  const speech = useSpeech(status.state);
+  const voice = useVoice(status.state, conversation);
+  const speech = useSpeech(status.state, voice.stop);
   const appInfo = useAppInfo();
   const platform = appInfo?.platform
     ?? (typeof navigator !== "undefined" && navigator.userAgent.includes("Windows") ? "win32" : "unknown");
-  const orbPhase = speech.phase === "recording"
-    ? "recording"
-    : speech.phase === "transcribing"
-      ? "processing"
-      : conversation.orb;
+  const orbPhase = voice.phase === "speaking"
+    ? "speaking"
+    : voice.phase === "preparing"
+      ? "preparing"
+      : speech.phase === "recording"
+        ? "recording"
+        : speech.phase === "transcribing"
+          ? "processing"
+          : conversation.orb;
+  const level = voice.phase === "speaking" || voice.phase === "preparing" ? voice.level : speech.level;
 
   return (
     <div className="shell">
@@ -25,8 +32,8 @@ export function App() {
       <div className="vignette" />
       <Header status={status} platform={platform} />
       <main className="workspace">
-        <ConversationPanel conversation={conversation} speech={speech} />
-        <Stage status={status} phase={orbPhase} micLevel={speech.level} />
+        <ConversationPanel conversation={conversation} speech={speech} voice={voice} />
+        <Stage status={status} phase={orbPhase} micLevel={level} />
         <ActivityPanel status={status} />
       </main>
       <footer className="footer">Local by default · Cloud only after you opt in</footer>

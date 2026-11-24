@@ -124,6 +124,38 @@ $env:EVA_WHISPER_GPU = "vulkan"
 
 If either path is missing, the conversation panel says so and a transcription request fails before a process starts. The rest of EVA keeps working.
 
+## Local speech playback
+
+Playback uses [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) through [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx). The Java core keeps one Python worker for the session. The worker loads the model once and reads requests on stdin. Audio comes back as 24 kHz mono PCM and is wrapped as WAV. The page plays it with the Web Audio API. Volume is applied in the page. Kokoro never sees it. Synthesis stays local whether the chat provider is Ollama or OpenAI. EVA does not call a cloud voice API.
+
+The default voice is Heart (`af_heart`, American English). Bella, Nova, and Sarah are the other American voices. Emma (`bf_emma`) is British English. French is Siwis (`ff_siwis`). Kokoro-82M v1.0 has that one French voice, trained on less than 11 hours, and its own card grades it B−. There is no Arabic voice in this model, so EVA does not offer one.
+
+Speak completed replies is off until you turn it on. While it is on, EVA speaks a reply only after that reply finishes successfully. A stopped, failed, or partial reply stays silent. Listen on a finished reply plays it again. Preview speaks one fixed sentence and does not add a chat message. Stop speaking cuts the sound immediately and drops anything still queued. Starting the microphone does the same. Stopping speech does not stop the model from writing the reply. Closing EVA stops the worker with the Java process.
+
+A reply is split into sentences after it is complete, so the next sentence can be synthesized while the current one plays. Speaking in the middle of token streaming is not implemented. Fenced code is replaced with "code block omitted". Long links become "a link". The transcript on screen is unchanged.
+
+EVA does not download Python, the packages, or the weights. Install them yourself and leave them out of git:
+
+```powershell
+py -3.12 -m venv C:\Tools\kokoro\venv
+C:\Tools\kokoro\venv\Scripts\python.exe -m pip install -r speech\kokoro\requirements.txt
+```
+
+Download `kokoro-v1.0.onnx` and `voices-v1.0.bin` from the kokoro-onnx `model-files-v1.1` release. Then, before launching EVA:
+
+```powershell
+$env:EVA_KOKORO_PYTHON = "C:\Tools\kokoro\venv\Scripts\python.exe"
+$env:EVA_KOKORO_WORKER = "C:\Users\karim\Repos\eva\speech\kokoro\worker.py"
+$env:EVA_KOKORO_MODEL = "C:\Tools\kokoro\kokoro-v1.0.onnx"
+$env:EVA_KOKORO_VOICES = "C:\Tools\kokoro\voices-v1.0.bin"
+```
+
+Use the absolute path of this checkout for the worker. The Python path must be `python.exe` or `python3.exe`. The worker file must be named `worker.py`. The weights must use those two file names. Do not install `onnxruntime-gpu`; the CPU runtime leaves the AMD GPU free for Ollama.
+
+Kokoro-82M is Apache-2.0. kokoro-onnx and onnxruntime are MIT. phonemizer and espeak-ng, which the worker uses for pronunciation, are GPL-3. They stay in the virtual environment you install. EVA does not ship them.
+
+If the paths are missing, Listen says so and chat continues.
+
 ## Privacy and limits
 
 - Local is the default. Nothing in a conversation is sent to OpenAI unless that send has cloud mode enabled. Microphone audio is never sent to OpenAI.

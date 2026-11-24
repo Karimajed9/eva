@@ -15,5 +15,5 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "vite.config.ts", "../shared/contract.ts", "../shared/speech-wav.ts", "../shared/speech-preferences.ts"]
+  "include": ["src", "vite.config.ts", "../shared/contract.ts", "../shared/speech-wav.ts", "../shared/speech-preferences.ts", "../shared/spoken-text.ts", "../shared/tts.ts", "../shared/tts-preferences.ts"]
 }

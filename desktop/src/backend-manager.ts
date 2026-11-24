@@ -12,8 +12,10 @@ import {
   type SpeechResult,
 } from "../../shared/contract";
 import type { SpeechAudioRequest } from "../../shared/speech-preferences";
+import type { TtsRequest, TtsResult } from "../../shared/tts";
 import { callCore, streamCore, type CoreCall } from "./core-request";
 import { postSpeech } from "./speech-request";
+import { postTts } from "./tts-request";
 import { assertJava21, findFreePort, resolveJavaExecutable } from "./process-launch";
 import { redactSecrets } from "./redact";
 import {
@@ -44,6 +46,7 @@ export class BackendManager {
   private disposed = false;
   private activeStream: AbortController | null = null;
   private activeSpeech: AbortController | null = null;
+  private activeTts: AbortController | null = null;
   private haltPromise: Promise<void> | null = null;
   private readonly recentLogs: string[] = [];
   private readonly listeners = new Set<(status: BackendStatus) => void>();
@@ -91,6 +94,27 @@ export class BackendManager {
   abortSpeech(): void {
     this.activeSpeech?.abort();
     this.activeSpeech = null;
+  }
+
+  abortTts(): void {
+    this.activeTts?.abort();
+    this.activeTts = null;
+  }
+
+  synthesizeSpeech(request: TtsRequest): Promise<TtsResult> {
+    const controller = new AbortController();
+    this.abortTts();
+    this.activeTts = controller;
+    return postTts({
+      port: this.port,
+      token: this.token,
+      request,
+      signal: controller.signal,
+    }).finally(() => {
+      if (this.activeTts === controller) {
+        this.activeTts = null;
+      }
+    });
   }
 
   transcribeSpeech(request: SpeechAudioRequest): Promise<SpeechResult> {

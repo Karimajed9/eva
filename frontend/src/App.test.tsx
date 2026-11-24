@@ -105,6 +105,11 @@ function installBridge(options: {
       inferenceMs: null,
     }),
     cancelSpeech: async () => {},
+    getTtsStatus: async () => ({ engine: "kokoro" as const, available: false, detail: "Kokoro is not configured.", loadMs: null }),
+    getTtsPreferences: async () => ({ voice: "af_heart" as const, speed: 1, volume: 1, autoPlay: false }),
+    saveTtsPreferences: async (preferences) => preferences,
+    synthesizeSpeech: async () => ({ ok: false as const, code: "missing-engine" as const, detail: "Kokoro is not configured." }),
+    cancelTts: async () => {},
   };
   return tracker;
 }
@@ -204,6 +209,11 @@ describe("EVA interface", () => {
         inferenceMs: null,
       }),
       cancelSpeech: async () => {},
+      getTtsStatus: async () => ({ engine: "kokoro" as const, available: false, detail: "Kokoro is not configured.", loadMs: null }),
+      getTtsPreferences: async () => ({ voice: "af_heart" as const, speed: 1, volume: 1, autoPlay: false }),
+      saveTtsPreferences: async (preferences) => preferences,
+      synthesizeSpeech: async () => ({ ok: false as const, code: "missing-engine" as const, detail: "Kokoro is not configured." }),
+      cancelTts: async () => {},
     };
 
     render(<App />);

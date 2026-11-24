@@ -24,6 +24,22 @@ import {
   type SpeechAudioRequest,
   type SpeechPreferences,
 } from "../../shared/speech-preferences";
+import { isRecord } from "../../shared/contract";
+import {
+  parseTtsFailure,
+  parseTtsRequest,
+  parseTtsStatus,
+  parseTtsWav,
+  ttsFailure,
+  type TtsRequest,
+  type TtsResult,
+  type TtsStatus,
+} from "../../shared/tts";
+import {
+  defaultTtsPreferences,
+  parseTtsPreferences,
+  type TtsPreferences,
+} from "../../shared/tts-preferences";
 
 const eva = {
   async getBackendStatus(): Promise<BackendStatus> {
@@ -120,6 +136,48 @@ const eva = {
   },
   async cancelSpeech(): Promise<void> {
     await ipcRenderer.invoke(IpcChannel.cancelSpeech);
+  },
+  async getTtsStatus(): Promise<TtsStatus | TtsResult> {
+    const payload: unknown = await ipcRenderer.invoke(IpcChannel.getTts);
+    return parseTtsStatus(payload) ?? parseTtsFailure(payload) ?? ttsFailure("engine-error", "Local speech failed.");
+  },
+  async getTtsPreferences(): Promise<TtsPreferences> {
+    return parseTtsPreferences(await ipcRenderer.invoke(IpcChannel.getTtsPreferences)) ?? { ...defaultTtsPreferences };
+  },
+  async saveTtsPreferences(preferences: TtsPreferences): Promise<TtsPreferences> {
+    const accepted = parseTtsPreferences(preferences);
+    if (!accepted) {
+      throw new Error("Invalid speech settings.");
+    }
+    const parsed = parseTtsPreferences(await ipcRenderer.invoke(IpcChannel.saveTtsPreferences, accepted));
+    if (!parsed) {
+      throw new Error("Invalid speech settings.");
+    }
+    return parsed;
+  },
+  async synthesizeSpeech(request: TtsRequest): Promise<TtsResult> {
+    const accepted = parseTtsRequest(request);
+    if (!accepted) {
+      return ttsFailure("invalid-speech", "The speech request was rejected.");
+    }
+    const payload: unknown = await ipcRenderer.invoke(IpcChannel.synthesizeSpeech, {
+      voice: accepted.voice,
+      speed: accepted.speed,
+      text: accepted.text,
+    });
+    if (isRecord(payload) && payload.ok === true && payload.audio instanceof Uint8Array) {
+      const wav = parseTtsWav(payload.audio);
+      const elapsedMs = typeof payload.elapsedMs === "number" ? payload.elapsedMs : 0;
+      const loadMs = payload.loadMs === null || typeof payload.loadMs === "number" ? payload.loadMs : null;
+      if (!wav || !Number.isInteger(elapsedMs) || elapsedMs < 0) {
+        return ttsFailure("engine-error", "Local speech failed.");
+      }
+      return { ok: true, audio: wav.audio, elapsedMs, loadMs: loadMs ?? null, audioMs: wav.audioMs, sampleRate: wav.sampleRate };
+    }
+    return parseTtsFailure(payload) ?? ttsFailure("engine-error", "Local speech failed.");
+  },
+  async cancelTts(): Promise<void> {
+    await ipcRenderer.invoke(IpcChannel.cancelTts);
   },
   subscribeConversation(listener: (delta: ConversationDelta) => void): () => void {
     if (typeof listener !== "function") {

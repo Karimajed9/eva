@@ -746,12 +746,14 @@ textarea {
   --orb-c: #ffe4e8;
 }
 
-.orb[data-phase="recording"] .sphere {
+.orb[data-phase="recording"] .sphere,
+.orb[data-phase="speaking"] .sphere {
   animation: none;
   transform: scale(calc(1 + (var(--mic-level, 0) * 0.18)));
 }
 
-.orb[data-phase="recording"] .orb-glow {
+.orb[data-phase="recording"] .orb-glow,
+.orb[data-phase="speaking"] .orb-glow {
   opacity: calc(0.5 + (var(--mic-level, 0) * 0.5));
 }
 
@@ -934,7 +936,8 @@ textarea {
     animation: none;
   }
 
-  .orb[data-phase="recording"] .sphere {
+  .orb[data-phase="recording"] .sphere,
+  .orb[data-phase="speaking"] .sphere {
     transform: none;
   }
 }
