@@ -10,6 +10,9 @@ export const IpcChannel = {
   resetConversation: "eva:conversation:reset",
   cancelConversation: "eva:conversation:cancel",
   conversationEvent: "eva:conversation:event",
+  getSpeech: "eva:speech:get",
+  transcribeSpeech: "eva:speech:transcribe",
+  cancelSpeech: "eva:speech:cancel",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -477,6 +480,108 @@ export function parseConversationStreamLine(value: unknown): ConversationStreamL
     return { kind: "error", seq, result };
   }
   return null;
+}
+
+export const speechCodes = [
+  "unavailable",
+  "missing-engine",
+  "missing-model",
+  "invalid-audio",
+  "cancelled",
+  "busy",
+  "engine-error",
+] as const;
+export type SpeechCode = (typeof speechCodes)[number];
+
+export interface SpeechStatus {
+  engine: "whisper.cpp";
+  available: boolean;
+  detail: string;
+}
+
+export interface SpeechSuccess {
+  ok: true;
+  text: string;
+}
+
+export interface SpeechFailure {
+  ok: false;
+  code: SpeechCode;
+  detail: string;
+}
+
+export type SpeechResult = SpeechSuccess | SpeechFailure;
+export type SpeechStatusResult = SpeechStatus | SpeechFailure;
+
+export function parseSpeechStatus(value: unknown): SpeechStatus | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["engine", "available", "detail"])) {
+    return null;
+  }
+  if (value.engine !== "whisper.cpp" || typeof value.available !== "boolean" || !isShortText(value.detail, 400)) {
+    return null;
+  }
+  return { engine: "whisper.cpp", available: value.available, detail: value.detail };
+}
+
+export function parseSpeechResult(value: unknown): SpeechResult | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (value.ok === false) {
+    if (!hasExactKeys(value, ["ok", "code", "detail"])) {
+      return null;
+    }
+    if (typeof value.code !== "string" || !(speechCodes as readonly string[]).includes(value.code)) {
+      return null;
+    }
+    if (!isShortText(value.detail, 400)) {
+      return null;
+    }
+    return { ok: false, code: value.code as SpeechCode, detail: value.detail };
+  }
+  if (!hasExactKeys(value, ["ok", "text"]) || value.ok !== true || typeof value.text !== "string") {
+    return null;
+  }
+  const text = value.text.trim();
+  if (text.length === 0 || text.length > 4000) {
+    return null;
+  }
+  return { ok: true, text };
+}
+
+export function parseSpeechTranscript(value: unknown): SpeechSuccess | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["text"]) || typeof value.text !== "string") {
+    return null;
+  }
+  return parseSpeechResult({ ok: true, text: value.text }) as SpeechSuccess | null;
+}
+
+export function parseSpeechStatusResult(value: unknown): SpeechStatusResult | null {
+  if (isRecord(value) && value.ok === false) {
+    const failure = parseSpeechResult(value);
+    return failure !== null && !failure.ok ? failure : null;
+  }
+  return parseSpeechStatus(value);
+}
+
+export function speechFailureFromCore(status: number, body: string): SpeechFailure {
+  let code: SpeechCode = "engine-error";
+  let detail = "Local transcription failed.";
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (isRecord(parsed) && typeof parsed.error === "string" && (speechCodes as readonly string[]).includes(parsed.error)) {
+      code = parsed.error as SpeechCode;
+    }
+    if (isRecord(parsed) && typeof parsed.detail === "string" && parsed.detail.length > 0 && parsed.detail.length <= 400) {
+      detail = parsed.detail;
+    }
+  } catch {
+    if (status === 0) {
+      code = "unavailable";
+      detail = "The local core could not be reached.";
+    }
+  }
+  return { ok: false, code, detail };
 }
 
 export function failureFromCore(status: number, body: string): ConversationFailure {
