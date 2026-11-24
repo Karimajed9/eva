@@ -10,6 +10,9 @@ import {
   parseConversationResult,
   parseConversationStreamLine,
   parseHealthPayload,
+  parseSpeechResult,
+  parseSpeechStatusResult,
+  speechFailureFromCore,
 } from "./contract";
 
 const health = {
@@ -82,7 +85,7 @@ describe("loopbackUrl", () => {
 });
 
 describe("IpcChannel", () => {
-  it("exposes only the status and conversation channels", () => {
+  it("exposes only the status, conversation, and speech channels", () => {
     expect(Object.values(IpcChannel)).toEqual([
       "eva:backend:get-status",
       "eva:backend:status",
@@ -92,6 +95,11 @@ describe("IpcChannel", () => {
       "eva:conversation:reset",
       "eva:conversation:cancel",
       "eva:conversation:event",
+      "eva:speech:get",
+      "eva:speech:transcribe",
+      "eva:speech:cancel",
+      "eva:speech:get-preferences",
+      "eva:speech:save-preferences",
     ]);
   });
 });
@@ -206,5 +214,37 @@ describe("conversation contract", () => {
       detail: "The reply was cancelled.",
       text: "hidden",
     })).toBeNull();
+  });
+});
+
+describe("speech contract", () => {
+  it("accepts whisper status and a transcript without extra fields", () => {
+    expect(parseSpeechStatusResult({
+      engine: "whisper.cpp",
+      available: false,
+      detail: "The whisper.cpp model file was not found. EVA does not download a model.",
+    })).toMatchObject({ available: false });
+    expect(parseSpeechResult({
+      ok: true,
+      text: "Bonjour",
+      elapsedMs: 1200,
+      recordingMs: 4000,
+      loadMs: 800,
+      inferenceMs: 300,
+    })).toMatchObject({ ok: true, text: "Bonjour", elapsedMs: 1200 });
+    expect(parseSpeechResult({ ok: true, text: "Bonjour", audio: "secret" })).toBeNull();
+    expect(parseSpeechResult({
+      ok: false,
+      code: "missing-model",
+      detail: "The whisper.cpp model file was not found. EVA does not download a model.",
+    })).toMatchObject({ code: "missing-model" });
+    expect(parseSpeechResult({ ok: false, code: "cloud-denied", detail: "no" })).toBeNull();
+  });
+
+  it("maps core speech errors without keeping a response body that is not JSON", () => {
+    expect(speechFailureFromCore(503, "{\"error\":\"missing-engine\",\"detail\":\"whisper.cpp is not configured.\"}")).toMatchObject({
+      code: "missing-engine",
+    });
+    expect(speechFailureFromCore(500, "not-json")).toMatchObject({ code: "engine-error" });
   });
 });

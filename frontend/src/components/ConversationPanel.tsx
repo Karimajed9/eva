@@ -1,6 +1,8 @@
 import { motion, useReducedMotion } from "motion/react";
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ConversationView } from "../hooks/useConversation";
+import type { SpeechView } from "../speech/useSpeech";
+import type { SpeechLanguage } from "../../../shared/speech-preferences";
 import { HudPanel } from "./HudPanel";
 
 const bottomSlack = 8;
@@ -11,15 +13,17 @@ function atBottom(node: HTMLElement): boolean {
 
 interface ConversationPanelProps {
   conversation: ConversationView;
+  speech: SpeechView;
 }
 
-export function ConversationPanel({ conversation }: ConversationPanelProps) {
+export function ConversationPanel({ conversation, speech }: ConversationPanelProps) {
   const reduced = useReducedMotion();
   const [draft, setDraft] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLFormElement>(null);
   const follow = useRef(true);
   const generating = useRef(false);
+  const appliedTranscript = useRef(0);
   const [pinned, setPinned] = useState(true);
   const selected = conversation.providers.find((item) => item.id === conversation.provider);
   const models = selected?.models ?? [];
@@ -29,7 +33,20 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
     || conversation.phase === "disconnected"
     || models.length === 0
     || cloudBlocked;
+  const micDisabled = conversation.phase === "loading" || conversation.phase === "generating";
   const location = conversation.provider === "openai" ? "Cloud" : "Local";
+
+  useEffect(() => {
+    if (speech.transcriptVersion === appliedTranscript.current) {
+      return;
+    }
+    appliedTranscript.current = speech.transcriptVersion;
+    setDraft(speech.transcript);
+    const field = composer.current?.querySelector("textarea");
+    if (field instanceof HTMLTextAreaElement) {
+      field.focus();
+    }
+  }, [speech.transcript, speech.transcriptVersion]);
 
   function revealBottom(): void {
     const node = transcript.current;
@@ -108,6 +125,7 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
           </label>
           <button type="button" onClick={() => void conversation.reset()}>New conversation</button>
         </div>
+        <SpeechSettings speech={speech} />
         {conversation.provider === "openai" ? (
           <p className="notice" data-testid="cloud-notice">
             Cloud mode sends this conversation to OpenAI. It stays off until you opt in, and EVA will not fall back to the cloud on its own.
@@ -150,6 +168,18 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
             {conversation.usage.estimatedUsd === null ? "" : ` · about $${conversation.usage.estimatedUsd.toFixed(4)}`}
           </p>
         ) : null}
+        {speech.notice ? (
+          <p
+            className="speech-status"
+            data-testid="speech-status"
+            data-phase={speech.phase}
+            title={speech.timingTitle || undefined}
+            aria-live="polite"
+          >
+            {speech.phase === "recording" ? <span className="speech-dot" aria-hidden="true" /> : null}
+            {speech.notice}
+          </p>
+        ) : null}
         <form
           ref={composer}
           className="composer"
@@ -171,15 +201,145 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
             placeholder="Message EVA"
             value={draft}
             disabled={composerDisabled}
+            style={{ overflowY: "auto" }}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => onComposerKeyDown(event, composerDisabled, draft, composer.current)}
           />
-          {conversation.phase === "generating"
-            ? <button type="button" onClick={conversation.cancel}>Cancel</button>
-            : <button type="submit" disabled={composerDisabled || draft.trim().length === 0}>Send</button>}
+          <div className="composer-actions">
+            {speech.phase === "recording" ? (
+              <>
+                <button type="button" onClick={speech.stop}>Stop recording</button>
+                <button type="button" onClick={speech.cancel}>Discard recording</button>
+              </>
+            ) : null}
+            {speech.phase === "transcribing" ? (
+              <button type="button" onClick={speech.cancel}>Cancel transcription</button>
+            ) : null}
+            {speech.phase === "recording" || speech.phase === "transcribing" ? null : (
+              <button
+                type="button"
+                data-testid="microphone"
+                disabled={micDisabled || speech.arming}
+                onClick={speech.start}
+              >
+                Speak
+              </button>
+            )}
+            {conversation.phase === "generating"
+              ? <button type="button" onClick={conversation.cancel}>Cancel</button>
+              : <button type="submit" disabled={composerDisabled || draft.trim().length === 0}>Send</button>}
+          </div>
         </form>
       </HudPanel>
     </motion.div>
+  );
+}
+
+function SpeechSettings({ speech }: { speech: SpeechView }) {
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [error, setError] = useState("");
+  const locked = speech.phase === "recording" || speech.phase === "transcribing";
+
+  function add(): void {
+    if (!speech.addTerm(draft)) {
+      setError("Use letters, numbers, spaces, apostrophes, or hyphens.");
+      return;
+    }
+    setDraft("");
+    setError("");
+  }
+
+  function commitEdit(): void {
+    if (editing === null) {
+      return;
+    }
+    if (!speech.editTerm(editing, editValue)) {
+      setError("Use letters, numbers, spaces, apostrophes, or hyphens.");
+      return;
+    }
+    setEditing(null);
+    setError("");
+  }
+
+  return (
+    <div className="speech-tools">
+      <label>
+        Speech language
+        <select
+          aria-label="Speech language"
+          value={speech.language}
+          disabled={locked}
+          onChange={(event) => speech.setLanguage(event.target.value as SpeechLanguage)}
+        >
+          <option value="auto">Detect language</option>
+          <option value="en">English</option>
+          <option value="fr">French</option>
+          <option value="ar">Arabic</option>
+        </select>
+      </label>
+      <div className="vocab">
+        <p className="vocab-label">Vocabulary</p>
+        {speech.vocabulary.map((term, index) => (
+          <div className="vocab-row" key={`${index}-${term}`}>
+            {editing === index ? (
+              <input
+                aria-label={`Edit vocabulary term ${index + 1}`}
+                value={editValue}
+                disabled={locked}
+                onChange={(event) => setEditValue(event.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitEdit();
+                  }
+                }}
+              />
+            ) : (
+              <span>{term}</span>
+            )}
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => {
+                setEditing(index);
+                setEditValue(term);
+                setError("");
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              aria-label={`Remove ${term}`}
+              disabled={locked}
+              onClick={() => speech.removeTerm(index)}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        <div className="vocab-row">
+          <input
+            aria-label="Add vocabulary term"
+            placeholder="Muay Thai"
+            value={draft}
+            disabled={locked}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                add();
+              }
+            }}
+          />
+          <button type="button" disabled={locked || draft.trim().length === 0} onClick={add}>Add</button>
+        </div>
+        {error ? <p className="vocab-error">{error}</p> : null}
+      </div>
+    </div>
   );
 }
 

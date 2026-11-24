@@ -1,7 +1,8 @@
 import { app, BrowserWindow, session, type BrowserWindowConstructorOptions } from "electron";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { isTrustedRendererUrl } from "./trusted-renderer";
+import { isTrustedRendererUrl, type RendererTrustOptions } from "./trusted-renderer";
+import { microphoneCheckAllowed, microphoneRequestAllowed } from "./microphone-access";
 
 export interface ShellWindowOptions {
   dev: boolean;
@@ -14,12 +15,17 @@ export function rendererFilePath(): string {
   return path.resolve(__dirname, "../../frontend/dist/index.html");
 }
 
-export function hardenSession(dev: boolean, rendererUrl: string): void {
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
-    callback(false);
+export function hardenSession(options: RendererTrustOptions): void {
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    const requestingUrl = "requestingUrl" in details ? details.requestingUrl : "";
+    const isMainFrame = "isMainFrame" in details ? details.isMainFrame : false;
+    const mediaTypes = "mediaTypes" in details ? details.mediaTypes : undefined;
+    callback(microphoneRequestAllowed(permission, { requestingUrl, isMainFrame, mediaTypes }, options));
   });
-  session.defaultSession.setPermissionCheckHandler(() => false);
-  const policy = contentSecurityPolicy(dev, rendererUrl);
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, _requestingOrigin, details) => {
+    return microphoneCheckAllowed(permission, details, options);
+  });
+  const policy = contentSecurityPolicy(options.dev, options.rendererUrl);
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = {
       ...details.responseHeaders,

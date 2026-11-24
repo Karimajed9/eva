@@ -6,12 +6,13 @@ import { Orb } from "./Orb";
 interface StageProps {
   status: BackendStatus;
   phase: OrbPhase;
+  micLevel?: number;
 }
 
-export function Stage({ status, phase }: StageProps) {
+export function Stage({ status, phase, micLevel = 0 }: StageProps) {
   return (
     <section className="stage" aria-label="Assistant">
-      <Orb state={status.state} phase={phase} />
+      <Orb state={status.state} phase={phase} micLevel={micLevel} />
       <div className="nameplate">
         <p className="kicker"><span>EVA</span></p>
         <h1 className="headline">{statusHeadline(status.state)}</h1>

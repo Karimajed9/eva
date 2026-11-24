@@ -9,8 +9,11 @@ import {
   type ConversationDelta,
   type ConversationFailure,
   type ConversationResult,
+  type SpeechResult,
 } from "../../shared/contract";
+import type { SpeechAudioRequest } from "../../shared/speech-preferences";
 import { callCore, streamCore, type CoreCall } from "./core-request";
+import { postSpeech } from "./speech-request";
 import { assertJava21, findFreePort, resolveJavaExecutable } from "./process-launch";
 import { redactSecrets } from "./redact";
 import {
@@ -40,6 +43,7 @@ export class BackendManager {
   private poll: NodeJS.Timeout | null = null;
   private disposed = false;
   private activeStream: AbortController | null = null;
+  private activeSpeech: AbortController | null = null;
   private haltPromise: Promise<void> | null = null;
   private readonly recentLogs: string[] = [];
   private readonly listeners = new Set<(status: BackendStatus) => void>();
@@ -82,6 +86,30 @@ export class BackendManager {
   abortActiveStream(): void {
     this.activeStream?.abort();
     this.activeStream = null;
+  }
+
+  abortSpeech(): void {
+    this.activeSpeech?.abort();
+    this.activeSpeech = null;
+  }
+
+  transcribeSpeech(request: SpeechAudioRequest): Promise<SpeechResult> {
+    const controller = new AbortController();
+    this.abortSpeech();
+    this.activeSpeech = controller;
+    return postSpeech({
+      port: this.port,
+      token: this.token,
+      audio: request.audio,
+      language: request.language,
+      prompt: request.prompt,
+      recordingMs: request.recordingMs,
+      signal: controller.signal,
+    }).finally(() => {
+      if (this.activeSpeech === controller) {
+        this.activeSpeech = null;
+      }
+    });
   }
 
   streamConversation(body: unknown, onDelta: (delta: ConversationDelta) => void): Promise<ConversationResult> {

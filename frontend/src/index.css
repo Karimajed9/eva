@@ -471,8 +471,9 @@ textarea {
 
 .composer textarea {
   resize: none;
-  height: 72px;
-  overflow: hidden;
+  height: 120px;
+  overflow-x: hidden;
+  overflow-y: auto;
   line-height: 1.45;
   border-radius: 12px;
   border: 1px solid rgba(138, 244, 255, 0.2);
@@ -504,6 +505,45 @@ textarea {
   cursor: not-allowed;
 }
 
+.composer-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+  gap: 8px;
+}
+
+.speech-status {
+  margin: 0;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.speech-status[data-phase="recording"] {
+  color: var(--amber);
+}
+
+.speech-status[data-phase="error"] {
+  color: var(--red);
+}
+
+.speech-status[data-phase="ready"] {
+  color: var(--green);
+}
+
+.speech-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 10px var(--amber);
+  animation: speech-pulse 1s ease-in-out infinite;
+}
+
 .conversation-tools {
   position: relative;
   display: flex;
@@ -533,6 +573,62 @@ textarea {
   border: 1px solid rgba(138, 244, 255, 0.2);
   background: rgba(2, 6, 14, 0.72);
   padding: 7px 8px;
+}
+
+.speech-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.speech-tools label,
+.vocab-label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.speech-tools select,
+.speech-tools input,
+.speech-tools button {
+  color: var(--ink);
+  font: inherit;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  border-radius: 10px;
+  border: 1px solid rgba(138, 244, 255, 0.2);
+  background: rgba(2, 6, 14, 0.72);
+  padding: 7px 8px;
+}
+
+.vocab {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vocab-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.vocab-row span {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.vocab-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 12px;
 }
 
 .transcript-frame {
@@ -648,6 +744,15 @@ textarea {
   --orb-a: #ff9aab;
   --orb-b: #c43b55;
   --orb-c: #ffe4e8;
+}
+
+.orb[data-phase="recording"] .sphere {
+  animation: none;
+  transform: scale(calc(1 + (var(--mic-level, 0) * 0.18)));
+}
+
+.orb[data-phase="recording"] .orb-glow {
+  opacity: calc(0.5 + (var(--mic-level, 0) * 0.5));
 }
 
 .orb {
@@ -810,6 +915,10 @@ textarea {
   50% { transform: scale(1.045); }
 }
 
+@keyframes speech-pulse {
+  50% { opacity: 0.35; }
+}
+
 @media (max-width: 1080px) {
   body { overflow: auto; }
   .shell { height: auto; min-height: 100%; }
@@ -820,7 +929,12 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .ring,
   .orbit,
-  .sphere {
+  .sphere,
+  .speech-dot {
     animation: none;
+  }
+
+  .orb[data-phase="recording"] .sphere {
+    transform: none;
   }
 }

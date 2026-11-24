@@ -56,7 +56,11 @@ async function bootstrap(): Promise<void> {
   if (process.platform !== "darwin") {
     Menu.setApplicationMenu(null);
   }
-  hardenSession(dev, rendererUrl);
+  hardenSession({
+    dev,
+    rendererUrl,
+    rendererFile: rendererFilePath(),
+  });
   installNavigationGuards({
     dev,
     rendererUrl,
@@ -89,6 +93,7 @@ async function bootstrap(): Promise<void> {
     rendererFile: rendererFilePath(),
     version: shellVersion(),
     platform: process.platform,
+    preferencesPath: path.join(app.getPath("userData"), "speech-preferences.json"),
   });
 
   try {

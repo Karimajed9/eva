@@ -10,7 +10,7 @@ import type {
 } from "../../../shared/contract";
 
 export type PanelPhase = "loading" | "generating" | "error" | "disconnected" | "idle";
-export type OrbPhase = "idle" | "processing" | "responding" | "error";
+export type OrbPhase = "idle" | "processing" | "responding" | "error" | "recording";
 
 const bridgeDetail = "Desktop bridge unavailable. Launch EVA with the Electron shell.";
 const cloudDefaultModel = "gpt-6-luna";

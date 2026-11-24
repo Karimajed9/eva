@@ -7,13 +7,23 @@ import {
   parseConversationDelta,
   parseConversationRequest,
   parseConversationResult,
+  parseSpeechResult,
+  parseSpeechStatusResult,
   type AppInfo,
   type BackendStatus,
   type CatalogResult,
   type ConversationDelta,
   type ConversationRequest,
   type ConversationResult,
+  type SpeechResult,
+  type SpeechStatusResult,
 } from "../../shared/contract";
+import {
+  parseSpeechAudioRequest,
+  parseSpeechPreferences,
+  type SpeechAudioRequest,
+  type SpeechPreferences,
+} from "../../shared/speech-preferences";
 
 const eva = {
   async getBackendStatus(): Promise<BackendStatus> {
@@ -72,6 +82,44 @@ const eva = {
   },
   async cancelConversation(): Promise<void> {
     await ipcRenderer.invoke(IpcChannel.cancelConversation);
+  },
+  async getSpeechStatus(): Promise<SpeechStatusResult> {
+    const parsed = parseSpeechStatusResult(await ipcRenderer.invoke(IpcChannel.getSpeech));
+    if (!parsed) {
+      throw new Error("Invalid speech status.");
+    }
+    return parsed;
+  },
+  async getSpeechPreferences(): Promise<SpeechPreferences> {
+    return parseSpeechPreferences(await ipcRenderer.invoke(IpcChannel.getSpeechPreferences)) ?? {
+      language: "auto",
+      vocabulary: [],
+    };
+  },
+  async saveSpeechPreferences(preferences: SpeechPreferences): Promise<SpeechPreferences> {
+    const accepted = parseSpeechPreferences(preferences);
+    if (!accepted) {
+      throw new Error("Invalid speech settings.");
+    }
+    const parsed = parseSpeechPreferences(await ipcRenderer.invoke(IpcChannel.saveSpeechPreferences, accepted));
+    if (!parsed) {
+      throw new Error("Invalid speech settings.");
+    }
+    return parsed;
+  },
+  async transcribeSpeech(request: SpeechAudioRequest): Promise<SpeechResult> {
+    const accepted = parseSpeechAudioRequest(request);
+    if (!accepted) {
+      return { ok: false, code: "invalid-audio", detail: "EVA could not use that recording." };
+    }
+    const parsed = parseSpeechResult(await ipcRenderer.invoke(IpcChannel.transcribeSpeech, accepted));
+    if (!parsed) {
+      throw new Error("Invalid transcription.");
+    }
+    return parsed;
+  },
+  async cancelSpeech(): Promise<void> {
+    await ipcRenderer.invoke(IpcChannel.cancelSpeech);
   },
   subscribeConversation(listener: (delta: ConversationDelta) => void): () => void {
     if (typeof listener !== "function") {
