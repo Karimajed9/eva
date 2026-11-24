@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ConversationView } from "../hooks/useConversation";
+import type { SpeechView } from "../speech/useSpeech";
 import { HudPanel } from "./HudPanel";
 
 const bottomSlack = 8;
@@ -11,15 +12,17 @@ function atBottom(node: HTMLElement): boolean {
 
 interface ConversationPanelProps {
   conversation: ConversationView;
+  speech: SpeechView;
 }
 
-export function ConversationPanel({ conversation }: ConversationPanelProps) {
+export function ConversationPanel({ conversation, speech }: ConversationPanelProps) {
   const reduced = useReducedMotion();
   const [draft, setDraft] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLFormElement>(null);
   const follow = useRef(true);
   const generating = useRef(false);
+  const appliedTranscript = useRef(0);
   const [pinned, setPinned] = useState(true);
   const selected = conversation.providers.find((item) => item.id === conversation.provider);
   const models = selected?.models ?? [];
@@ -29,7 +32,20 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
     || conversation.phase === "disconnected"
     || models.length === 0
     || cloudBlocked;
+  const micDisabled = conversation.phase === "loading" || conversation.phase === "generating";
   const location = conversation.provider === "openai" ? "Cloud" : "Local";
+
+  useEffect(() => {
+    if (speech.transcriptVersion === appliedTranscript.current) {
+      return;
+    }
+    appliedTranscript.current = speech.transcriptVersion;
+    setDraft(speech.transcript);
+    const field = composer.current?.querySelector("textarea");
+    if (field instanceof HTMLTextAreaElement) {
+      field.focus();
+    }
+  }, [speech.transcript, speech.transcriptVersion]);
 
   function revealBottom(): void {
     const node = transcript.current;
@@ -150,6 +166,12 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
             {conversation.usage.estimatedUsd === null ? "" : ` · about $${conversation.usage.estimatedUsd.toFixed(4)}`}
           </p>
         ) : null}
+        {speech.notice ? (
+          <p className="speech-status" data-testid="speech-status" data-phase={speech.phase} aria-live="polite">
+            {speech.phase === "recording" ? <span className="speech-dot" aria-hidden="true" /> : null}
+            {speech.notice}
+          </p>
+        ) : null}
         <form
           ref={composer}
           className="composer"
@@ -174,9 +196,30 @@ export function ConversationPanel({ conversation }: ConversationPanelProps) {
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => onComposerKeyDown(event, composerDisabled, draft, composer.current)}
           />
-          {conversation.phase === "generating"
-            ? <button type="button" onClick={conversation.cancel}>Cancel</button>
-            : <button type="submit" disabled={composerDisabled || draft.trim().length === 0}>Send</button>}
+          <div className="composer-actions">
+            {speech.phase === "recording" ? (
+              <>
+                <button type="button" onClick={speech.stop}>Stop recording</button>
+                <button type="button" onClick={speech.cancel}>Discard recording</button>
+              </>
+            ) : null}
+            {speech.phase === "transcribing" ? (
+              <button type="button" onClick={speech.cancel}>Cancel transcription</button>
+            ) : null}
+            {speech.phase === "recording" || speech.phase === "transcribing" ? null : (
+              <button
+                type="button"
+                data-testid="microphone"
+                disabled={micDisabled || speech.arming}
+                onClick={speech.start}
+              >
+                Speak
+              </button>
+            )}
+            {conversation.phase === "generating"
+              ? <button type="button" onClick={conversation.cancel}>Cancel</button>
+              : <button type="submit" disabled={composerDisabled || draft.trim().length === 0}>Send</button>}
+          </div>
         </form>
       </HudPanel>
     </motion.div>

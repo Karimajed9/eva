@@ -64,7 +64,7 @@ Pull requests run `.github/workflows/ci.yml`. The backend job builds and tests t
 
 - A dark HUD with the same orb. Its conversation phase is `idle`, `processing`, `responding`, or `error`. That is not a voice animation.
 - A connection pill driven by `GET /api/health`. `CORE ONLINE` means the Java process answered with the expected payload. `CONNECTING`, `CORE OFFLINE`, and `CORE ERROR` are the other real states.
-- A conversation panel with user and assistant bubbles, a provider selector, a model selector, a local or cloud stamp, and a new-conversation control. Enter sends the message. Shift+Enter inserts a newline and does not send. The activity panel still says **Not connected to AI** because computer automation is not enabled.
+- A conversation panel with user and assistant bubbles, a provider selector, a model selector, a local or cloud stamp, a microphone control, and a new-conversation control. Enter sends the message. Shift+Enter inserts a newline and does not send. Speak records from the microphone, Stop puts the local transcript in the message box, and Send is still your action. The activity panel still says **Not connected to AI** because computer automation is not enabled.
 - If Ollama is not running, the local provider is marked disconnected and EVA does not send the message. It also does not download a model.
 - If you open the Vite URL in a normal browser, the pill reports that the desktop bridge is unavailable. The session token and any API key never enter the page, so the browser cannot call the core.
 
@@ -96,9 +96,33 @@ The cloud model list is fixed: GPT-4o mini (`gpt-4o-mini`), GPT-4o (`gpt-4o`), G
 
 There is no automatic fallback. A local failure stays local. A cloud failure stays an error.
 
+## Local speech
+
+Speech-to-text stays on this machine. EVA records from the microphone, converts the audio to 16 kHz mono PCM WAV, and sends those bytes to the local core. The core runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp) with `-l auto`. The transcript is placed in the message box. EVA does not send it until you do. Recordings are temporary files and are deleted after transcription, cancellation, or a failed run. Audio and transcript text are not written to the log.
+
+EVA does not download whisper.cpp or a model. Set both paths before launching:
+
+```powershell
+$env:EVA_WHISPER_EXECUTABLE = "C:\Tools\whisper\whisper-cli.exe"
+$env:EVA_WHISPER_MODEL = "C:\Tools\whisper\ggml-small.bin"
+npm run dev
+```
+
+The executable must be an absolute path named `whisper-cli.exe`, `whisper-cli`, `main.exe`, `main`, `whisper.exe`, or `whisper`. The model must be an absolute path to a multilingual `ggml-*.bin` file. English-only files such as `ggml-base.en.bin` are rejected because this milestone needs French and Arabic as well as English. `ggml-small.bin` is the recommended balance. Larger multilingual models also work.
+
+CPU is the default. The core passes `-ng`, so a GPU build still runs on the CPU. For an AMD GPU, build whisper.cpp with Vulkan (`-DGGML_VULKAN=ON` in CMake) and start EVA with:
+
+```powershell
+$env:EVA_WHISPER_GPU = "vulkan"
+```
+
+`on` and `amd` mean the same thing. EVA then omits `-ng` and lets that whisper.cpp build select its GPU. A CPU-only binary should keep the variable unset.
+
+If either path is missing, the conversation panel says so and a transcription request fails before a process starts. The rest of EVA keeps working.
+
 ## Privacy and limits
 
-- Local is the default. Nothing in a conversation is sent to OpenAI unless that send has cloud mode enabled.
+- Local is the default. Nothing in a conversation is sent to OpenAI unless that send has cloud mode enabled. Microphone audio is never sent to OpenAI.
 - The system prompt lives in `backend/src/main/resources/personality/eva-system-prompt.txt`. It is the only extra instruction added to a request. EVA does not attach files, mail, calendar data, or a user profile.
 - Transcript context is in memory in the Java process. New conversation clears it. Restarting EVA clears it. There is no database.
 - A message is limited to 4,000 characters. The remembered context is at most 16 messages and 8,000 characters.
@@ -169,7 +193,7 @@ Treat the value as compromised even though the log hides it. Revoke or rotate it
 
 ## Out of scope
 
-Voice, computer automation, tool execution, Gmail, calendar, permanent memory, SQLite, background tasks, and cloud hosting are not in this milestone. A later capability needs its own IPC channel and backend route, and both should keep the checks above.
+Voice replies, wake-word activation, always-on listening, computer automation, tool execution, Gmail, calendar, permanent memory, SQLite, background tasks, and cloud hosting are not in this milestone. A later capability needs its own IPC channel and backend route, and both should keep the checks above.
 
 ## License
 

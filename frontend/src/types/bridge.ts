@@ -5,6 +5,8 @@ import type {
   ConversationDelta,
   ConversationRequest,
   ConversationResult,
+  SpeechResult,
+  SpeechStatusResult,
 } from "../../../shared/contract";
 
 export interface EvaBridge {
@@ -15,6 +17,9 @@ export interface EvaBridge {
   sendConversation(request: ConversationRequest): Promise<ConversationResult>;
   resetConversation(): Promise<CatalogResult>;
   cancelConversation(): Promise<void>;
+  getSpeechStatus(): Promise<SpeechStatusResult>;
+  transcribeSpeech(audio: Uint8Array): Promise<SpeechResult>;
+  cancelSpeech(): Promise<void>;
   subscribeConversation(listener: (delta: ConversationDelta) => void): () => void;
 }
 

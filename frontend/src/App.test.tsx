@@ -89,6 +89,13 @@ function installBridge(options: {
       tracker.cancelled += 1;
     },
     subscribeConversation: () => () => {},
+    getSpeechStatus: async () => ({
+      engine: "whisper.cpp" as const,
+      available: true,
+      detail: "Local transcription is ready. Audio stays on this machine.",
+    }),
+    transcribeSpeech: async () => ({ ok: true as const, text: "from the microphone" }),
+    cancelSpeech: async () => {},
   };
   return tracker;
 }
@@ -172,6 +179,13 @@ describe("EVA interface", () => {
       resetConversation: async () => catalog(),
       cancelConversation: async () => {},
       subscribeConversation: () => () => {},
+      getSpeechStatus: async () => ({
+        engine: "whisper.cpp" as const,
+        available: true,
+        detail: "Local transcription is ready. Audio stays on this machine.",
+      }),
+      transcribeSpeech: async () => ({ ok: true as const, text: "from the microphone" }),
+      cancelSpeech: async () => {},
     };
 
     render(<App />);

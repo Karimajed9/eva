@@ -3,10 +3,13 @@ import {
   IpcChannel,
   parseConversationCatalog,
   parseConversationRequest,
+  parseSpeechStatusResult,
   SHELL_NAME,
   type AppInfo,
   type ConversationFailure,
+  type SpeechFailure,
 } from "../../shared/contract";
+import { parseSpeechWav } from "../../shared/speech-wav";
 import type { BackendManager } from "./backend-manager";
 import { isTrustedRendererUrl, type RendererTrustOptions } from "./trusted-renderer";
 
@@ -72,10 +75,43 @@ export function registerIpc(manager: BackendManager, options: IpcOptions): void 
     }
     return { ok: true as const, status: "CANCELLED" };
   });
+
+  ipcMain.handle(IpcChannel.getSpeech, async (event) => {
+    assertTrustedSender(event, options);
+    const result = await manager.core("GET", "/api/speech");
+    if ("ok" in result) {
+      return result;
+    }
+    return parseSpeechStatusResult(result.json) ?? invalidSpeech();
+  });
+
+  ipcMain.handle(IpcChannel.transcribeSpeech, async (event, payload: unknown) => {
+    assertTrustedSender(event, options);
+    const audio = parseSpeechWav(payload);
+    if (!audio) {
+      return invalidAudio();
+    }
+    return manager.transcribeSpeech(audio);
+  });
+
+  ipcMain.handle(IpcChannel.cancelSpeech, async (event) => {
+    assertTrustedSender(event, options);
+    manager.abortSpeech();
+    await manager.core("POST", "/api/speech/cancel");
+    return { ok: true as const, status: "CANCELLED" };
+  });
 }
 
 function invalidConversation(): ConversationFailure {
   return { ok: false, code: "invalid", detail: "The conversation response did not match the contract." };
+}
+
+function invalidSpeech(): SpeechFailure {
+  return { ok: false, code: "engine-error", detail: "The speech status did not match the contract." };
+}
+
+function invalidAudio(): SpeechFailure {
+  return { ok: false, code: "invalid-audio", detail: "EVA could not use that recording." };
 }
 
 export function assertTrustedSender(event: IpcMainInvokeEvent, options: IpcOptions): void {

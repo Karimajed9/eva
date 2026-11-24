@@ -56,7 +56,11 @@ async function bootstrap(): Promise<void> {
   if (process.platform !== "darwin") {
     Menu.setApplicationMenu(null);
   }
-  hardenSession(dev, rendererUrl);
+  hardenSession({
+    dev,
+    rendererUrl,
+    rendererFile: rendererFilePath(),
+  });
   installNavigationGuards({
     dev,
     rendererUrl,

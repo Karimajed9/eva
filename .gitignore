@@ -36,7 +36,12 @@ credentials.json
 *.sqlite3
 *.mv.db
 
-# Logs and local runtime
+# Local speech engines and models. Do not commit whisper.cpp binaries or ggml weights.
+/whisper/
+/models/
+ggml-*.bin
+*.wav
+
 *.log
 npm-debug.log*
 *.pid

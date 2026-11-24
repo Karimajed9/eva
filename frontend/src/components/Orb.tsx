@@ -1,14 +1,19 @@
 import { motion, useReducedMotion } from "motion/react";
+import type { CSSProperties } from "react";
 import type { BackendState } from "../../../shared/contract";
 import { orbTone } from "../status-copy";
 
 interface OrbProps {
   state: BackendState;
-  phase?: "idle" | "processing" | "responding" | "error";
+  phase?: "idle" | "processing" | "responding" | "error" | "recording";
+  micLevel?: number;
 }
 
-export function Orb({ state, phase = "idle" }: OrbProps) {
+export function Orb({ state, phase = "idle", micLevel = 0 }: OrbProps) {
   const reduced = useReducedMotion();
+  const style = phase === "recording"
+    ? { "--mic-level": micLevel.toFixed(3) } as CSSProperties
+    : undefined;
   return (
     <motion.div
       className="orb"
@@ -16,6 +21,7 @@ export function Orb({ state, phase = "idle" }: OrbProps) {
       data-state={state}
       data-phase={phase}
       data-tone={orbTone(state)}
+      style={style}
       initial={reduced ? false : { opacity: 0, scale: 0.94 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
