@@ -1,17 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import type { BackendState } from "../../../shared/contract";
+import {
+  emptySpeechPreferences,
+  normalizeVocabulary,
+  speechPrompt,
+  type SpeechLanguage,
+  type SpeechPreferences,
+} from "../../../shared/speech-preferences";
 import { openRecording, type MicrophoneSession } from "./microphone";
-import { describeMicrophoneFailure, formatDuration, MAX_RECORDING_MS } from "./speech-state";
+import { describeMicrophoneFailure, formatDuration, MAX_RECORDING_MS, readyNotice, timingTitle } from "./speech-state";
 
 export type SpeechPhase = "idle" | "recording" | "transcribing" | "ready" | "error";
 
 export interface SpeechView {
   phase: SpeechPhase;
   notice: string;
+  timingTitle: string;
   level: number;
   arming: boolean;
   transcript: string;
   transcriptVersion: number;
+  language: SpeechLanguage;
+  vocabulary: string[];
+  setLanguage: (language: SpeechLanguage) => void;
+  addTerm: (term: string) => boolean;
+  editTerm: (index: number, term: string) => boolean;
+  removeTerm: (index: number) => void;
   start: () => void;
   stop: () => void;
   cancel: () => void;
@@ -24,6 +38,9 @@ export function useSpeech(coreState: BackendState): SpeechView {
   const [arming, setArming] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [transcriptVersion, setTranscriptVersion] = useState(0);
+  const [language, setLanguage] = useState<SpeechLanguage>(emptySpeechPreferences.language);
+  const [vocabulary, setVocabulary] = useState<string[]>(emptySpeechPreferences.vocabulary);
+  const [timing, setTiming] = useState("");
   const phaseRef = useRef(phase);
   const sessionRef = useRef<MicrophoneSession | null>(null);
   const epoch = useRef(0);
@@ -32,7 +49,12 @@ export function useSpeech(coreState: BackendState): SpeechView {
   const armingRef = useRef(false);
   const finishingRef = useRef(false);
   const finishRef = useRef<(auto: boolean) => Promise<void>>(async () => {});
+  const languageRef = useRef(language);
+  const vocabularyRef = useRef(vocabulary);
+  const touched = useRef(false);
   phaseRef.current = phase;
+  languageRef.current = language;
+  vocabularyRef.current = vocabulary;
 
   function clearTimer(): void {
     if (timer.current !== null) {
@@ -65,6 +87,47 @@ export function useSpeech(coreState: BackendState): SpeechView {
       live = false;
     };
   }, [coreState]);
+
+  useEffect(() => {
+    const api = window.eva;
+    if (!api) {
+      return;
+    }
+    let live = true;
+    void api.getSpeechPreferences().then((preferences) => {
+      if (!live || touched.current) {
+        return;
+      }
+      setLanguage(preferences.language);
+      setVocabulary(preferences.vocabulary);
+    }).catch(() => {
+      if (live && (phaseRef.current === "idle" || phaseRef.current === "error")) {
+        setNotice("Speech settings could not be read.");
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function savePreferences(next: SpeechPreferences): Promise<void> {
+    touched.current = true;
+    setLanguage(next.language);
+    setVocabulary(next.vocabulary);
+    const api = window.eva;
+    if (!api) {
+      return;
+    }
+    try {
+      const saved = await api.saveSpeechPreferences(next);
+      setLanguage(saved.language);
+      setVocabulary(saved.vocabulary);
+    } catch {
+      if (phaseRef.current !== "recording" && phaseRef.current !== "transcribing") {
+        setNotice("Speech settings could not be saved.");
+      }
+    }
+  }
 
   useEffect(() => () => {
     epoch.current += 1;
@@ -99,7 +162,13 @@ export function useSpeech(coreState: BackendState): SpeechView {
       if (!api) {
         throw new Error("The desktop bridge is unavailable.");
       }
-      const result = await api.transcribeSpeech(wav);
+      const recordingMs = Math.min(MAX_RECORDING_MS, Math.max(0, Date.now() - startedAt.current));
+      const result = await api.transcribeSpeech({
+        audio: wav,
+        language: languageRef.current,
+        prompt: speechPrompt(vocabularyRef.current),
+        recordingMs,
+      });
       if (epoch.current !== id) {
         return;
       }
@@ -111,7 +180,8 @@ export function useSpeech(coreState: BackendState): SpeechView {
       setTranscript(result.text);
       setTranscriptVersion((value) => value + 1);
       setPhase("ready");
-      setNotice("Ready to send. Review the transcript before sending.");
+      setTiming(timingTitle(result.loadMs, result.inferenceMs));
+      setNotice(readyNotice(result.elapsedMs, result.recordingMs));
     } catch (error) {
       if (epoch.current !== id) {
         return;
@@ -142,6 +212,7 @@ export function useSpeech(coreState: BackendState): SpeechView {
     session?.cancel();
     void window.eva?.cancelSpeech();
     setPhase("idle");
+    setTiming("");
     setNotice("Recording cancelled. Nothing was kept.");
   }
 
@@ -199,13 +270,50 @@ export function useSpeech(coreState: BackendState): SpeechView {
     void finish(false);
   }
 
+  function chooseLanguage(next: SpeechLanguage): void {
+    void savePreferences({ language: next, vocabulary: vocabularyRef.current });
+  }
+
+  function addTerm(term: string): boolean {
+    const next = normalizeVocabulary([...vocabularyRef.current, term]);
+    if (!next) {
+      return false;
+    }
+    void savePreferences({ language: languageRef.current, vocabulary: next });
+    return true;
+  }
+
+  function editTerm(index: number, term: string): boolean {
+    const next = vocabularyRef.current.map((current, currentIndex) => (currentIndex === index ? term : current));
+    const normalized = normalizeVocabulary(next);
+    if (!normalized) {
+      return false;
+    }
+    void savePreferences({ language: languageRef.current, vocabulary: normalized });
+    return true;
+  }
+
+  function removeTerm(index: number): void {
+    void savePreferences({
+      language: languageRef.current,
+      vocabulary: vocabularyRef.current.filter((_term, currentIndex) => currentIndex !== index),
+    });
+  }
+
   return {
     phase,
     notice,
+    timingTitle: timing,
     level,
     arming,
     transcript,
     transcriptVersion,
+    language,
+    vocabulary,
+    setLanguage: chooseLanguage,
+    addTerm,
+    editTerm,
+    removeTerm,
     start,
     stop,
     cancel,

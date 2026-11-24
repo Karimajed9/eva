@@ -18,7 +18,12 @@ import {
   type SpeechResult,
   type SpeechStatusResult,
 } from "../../shared/contract";
-import { parseSpeechWav } from "../../shared/speech-wav";
+import {
+  parseSpeechAudioRequest,
+  parseSpeechPreferences,
+  type SpeechAudioRequest,
+  type SpeechPreferences,
+} from "../../shared/speech-preferences";
 
 const eva = {
   async getBackendStatus(): Promise<BackendStatus> {
@@ -85,8 +90,25 @@ const eva = {
     }
     return parsed;
   },
-  async transcribeSpeech(audio: Uint8Array): Promise<SpeechResult> {
-    const accepted = parseSpeechWav(audio);
+  async getSpeechPreferences(): Promise<SpeechPreferences> {
+    return parseSpeechPreferences(await ipcRenderer.invoke(IpcChannel.getSpeechPreferences)) ?? {
+      language: "auto",
+      vocabulary: [],
+    };
+  },
+  async saveSpeechPreferences(preferences: SpeechPreferences): Promise<SpeechPreferences> {
+    const accepted = parseSpeechPreferences(preferences);
+    if (!accepted) {
+      throw new Error("Invalid speech settings.");
+    }
+    const parsed = parseSpeechPreferences(await ipcRenderer.invoke(IpcChannel.saveSpeechPreferences, accepted));
+    if (!parsed) {
+      throw new Error("Invalid speech settings.");
+    }
+    return parsed;
+  },
+  async transcribeSpeech(request: SpeechAudioRequest): Promise<SpeechResult> {
+    const accepted = parseSpeechAudioRequest(request);
     if (!accepted) {
       return { ok: false, code: "invalid-audio", detail: "EVA could not use that recording." };
     }

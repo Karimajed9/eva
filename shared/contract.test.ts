@@ -98,6 +98,8 @@ describe("IpcChannel", () => {
       "eva:speech:get",
       "eva:speech:transcribe",
       "eva:speech:cancel",
+      "eva:speech:get-preferences",
+      "eva:speech:save-preferences",
     ]);
   });
 });
@@ -222,7 +224,14 @@ describe("speech contract", () => {
       available: false,
       detail: "The whisper.cpp model file was not found. EVA does not download a model.",
     })).toMatchObject({ available: false });
-    expect(parseSpeechResult({ ok: true, text: "Bonjour" })).toEqual({ ok: true, text: "Bonjour" });
+    expect(parseSpeechResult({
+      ok: true,
+      text: "Bonjour",
+      elapsedMs: 1200,
+      recordingMs: 4000,
+      loadMs: 800,
+      inferenceMs: 300,
+    })).toMatchObject({ ok: true, text: "Bonjour", elapsedMs: 1200 });
     expect(parseSpeechResult({ ok: true, text: "Bonjour", audio: "secret" })).toBeNull();
     expect(parseSpeechResult({
       ok: false,

@@ -10,5 +10,5 @@ public interface SpeechEngine {
 
     EngineStatus status();
 
-    String transcribe(byte[] wav, CancelToken cancel);
+    SpeechTranscript transcribe(byte[] wav, SpeechHints hints, CancelToken cancel);
 }

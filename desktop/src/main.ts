@@ -93,6 +93,7 @@ async function bootstrap(): Promise<void> {
     rendererFile: rendererFilePath(),
     version: shellVersion(),
     platform: process.platform,
+    preferencesPath: path.join(app.getPath("userData"), "speech-preferences.json"),
   });
 
   try {

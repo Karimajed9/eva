@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,8 +27,12 @@ public class SpeechController {
     }
 
     @PostMapping(value = "/transcribe", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
-    public SpeechTranscript transcribe(@RequestBody byte[] audio) {
-        return new SpeechTranscript(speech.transcribe(audio));
+    public SpeechTranscript transcribe(
+            @RequestHeader(value = "X-Eva-Language", required = false) String language,
+            @RequestHeader(value = "X-Eva-Prompt", required = false) String prompt,
+            @RequestHeader(value = "X-Eva-Recording-Ms", required = false) String recordingMs,
+            @RequestBody byte[] audio) {
+        return speech.transcribe(audio, SpeechHints.parse(language, prompt, recordingMs));
     }
 
     @PostMapping("/cancel")

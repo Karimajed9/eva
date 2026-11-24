@@ -22,7 +22,7 @@ public class SpeechServiceTest {
         SpeechStatus status = service.status();
         assertEquals("whisper.cpp", status.engine());
         assertFalse(status.available());
-        SpeechException failure = assertThrows(SpeechException.class, () -> service.transcribe(wav(WavAudio.MIN_SAMPLES)));
+        SpeechException failure = assertThrows(SpeechException.class, () -> service.transcribe(wav(WavAudio.MIN_SAMPLES), SpeechHints.automatic()));
         assertEquals("missing-engine", failure.code());
         assertFalse(failure.detail().contains("secretphrase"));
     }
@@ -32,13 +32,13 @@ public class SpeechServiceTest {
         AtomicBoolean called = new AtomicBoolean();
         SpeechService service = new SpeechService(new FixedEngine(true, "ready", "ready") {
             @Override
-            public String transcribe(byte[] wav, CancelToken cancel) {
+            public SpeechTranscript transcribe(byte[] wav, SpeechHints hints, CancelToken cancel) {
                 called.set(true);
-                return "should not run";
+                return new SpeechTranscript("should not run", 1, 0, null, null);
             }
         });
         byte[] audio = "secretphrase".getBytes(StandardCharsets.UTF_8);
-        SpeechException failure = assertThrows(SpeechException.class, () -> service.transcribe(audio));
+        SpeechException failure = assertThrows(SpeechException.class, () -> service.transcribe(audio, SpeechHints.automatic()));
         assertEquals("invalid-audio", failure.code());
         assertFalse(called.get());
         assertFalse(failure.detail().contains("secretphrase"));
@@ -50,17 +50,17 @@ public class SpeechServiceTest {
         SpeechService service = new SpeechService(engine);
         byte[] audio = wav(WavAudio.MIN_SAMPLES);
         Thread worker = new Thread(() -> {
-            SpeechException failure = assertThrows(SpeechException.class, () -> service.transcribe(audio));
+            SpeechException failure = assertThrows(SpeechException.class, () -> service.transcribe(audio, SpeechHints.automatic()));
             assertEquals("cancelled", failure.code());
         });
         worker.start();
         assertTrue(engine.started.await(2, TimeUnit.SECONDS));
-        SpeechException busy = assertThrows(SpeechException.class, () -> service.transcribe(audio));
+        SpeechException busy = assertThrows(SpeechException.class, () -> service.transcribe(audio, SpeechHints.automatic()));
         assertEquals("busy", busy.code());
         service.cancel();
         worker.join(2_000);
         assertFalse(worker.isAlive());
-        assertEquals("again", service.transcribe(audio));
+        assertEquals("again", service.transcribe(audio, SpeechHints.automatic()).text());
     }
 
     public static byte[] wav(int samples) {
@@ -95,8 +95,8 @@ public class SpeechServiceTest {
         }
 
         @Override
-        public String transcribe(byte[] wav, CancelToken cancel) {
-            return "again";
+        public SpeechTranscript transcribe(byte[] wav, SpeechHints hints, CancelToken cancel) {
+            return new SpeechTranscript("again", 5, hints.recordingMs(), null, null);
         }
     }
 
@@ -109,9 +109,9 @@ public class SpeechServiceTest {
         }
 
         @Override
-        public String transcribe(byte[] wav, CancelToken cancel) {
+        public SpeechTranscript transcribe(byte[] wav, SpeechHints hints, CancelToken cancel) {
             if (calls.incrementAndGet() > 1) {
-                return "again";
+                return new SpeechTranscript("again", 5, hints.recordingMs(), null, null);
             }
             started.countDown();
             CountDownLatch released = new CountDownLatch(1);
@@ -127,7 +127,7 @@ public class SpeechServiceTest {
             if (cancel.isCancelled()) {
                 throw new SpeechException("cancelled", 409, "Transcription was cancelled.");
             }
-            return "again";
+            return new SpeechTranscript("again", 5, hints.recordingMs(), null, null);
         }
     }
 }

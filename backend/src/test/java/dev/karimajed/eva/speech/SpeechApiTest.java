@@ -66,6 +66,24 @@ class SpeechApiTest {
     }
 
     @Test
+    void rejectsAVocabularyHintWithoutEchoingIt() throws Exception {
+        String encoded = java.net.URLEncoder.encode("Muay Thai\ncalc.exe", java.nio.charset.StandardCharsets.UTF_8);
+        MvcResult rejected = mockMvc.perform(post("/api/speech/transcribe")
+                        .headers(desktopHeaders())
+                        .header("X-Eva-Language", "en")
+                        .header("X-Eva-Prompt", encoded)
+                        .header("X-Eva-Recording-Ms", "1000")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .content(SpeechServiceTest.wav(WavAudio.MIN_SAMPLES)))
+                .andReturn();
+        assertNotEquals(200, rejected.getResponse().getStatus());
+        String body = rejected.getResponse().getContentAsString();
+        assertFalse(body.contains("Muay"));
+        assertFalse(body.contains("calc"));
+        assertFalse(body.contains("secret"));
+    }
+
+    @Test
     void cancelIsALoopbackPost() throws Exception {
         mockMvc.perform(post("/api/speech/cancel").headers(desktopHeaders()))
                 .andExpect(status().isOk())

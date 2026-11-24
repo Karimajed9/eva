@@ -6,5 +6,5 @@ import java.util.List;
 
 public interface CommandRunner {
 
-    String run(List<String> command, Path directory, CancelToken cancel);
+    CommandOutput run(List<String> command, Path directory, CancelToken cancel);
 }

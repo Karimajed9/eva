@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.karimajed.eva.conversation.CancelToken;
 import dev.karimajed.eva.speech.SpeechException;
+import dev.karimajed.eva.speech.SpeechHints;
 import dev.karimajed.eva.speech.SpeechServiceTest;
+import dev.karimajed.eva.speech.SpeechTranscript;
 import dev.karimajed.eva.speech.WavAudio;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,12 +44,17 @@ class WhisperSpeechEngineTest {
                     seen.set(wav);
                     assertTrue(Files.exists(wav));
                     assertEquals(WavAudio.MIN_SAMPLES * 2 + 44, fileSize(wav));
-                    return "  [00:00:00.000 --> 00:00:01.000]  hello there  ";
+                    return new CommandOutput("  [00:00:00.000 --> 00:00:01.000]  hello there  ", 900L, 2_100L);
                 });
 
-        String text = engine.transcribe(SpeechServiceTest.wav(WavAudio.MIN_SAMPLES), new CancelToken());
+        SpeechTranscript transcript = engine.transcribe(
+                SpeechServiceTest.wav(WavAudio.MIN_SAMPLES),
+                SpeechHints.automatic(),
+                new CancelToken());
 
-        assertEquals("hello there", text);
+        assertEquals("hello there", transcript.text());
+        assertEquals(900L, transcript.loadMs());
+        assertEquals(1_200L, transcript.inferenceMs());
         assertFalse(Files.exists(seen.get()));
         assertFalse(Files.exists(Path.of(seen.get().toString() + ".txt")));
     }
@@ -71,9 +78,12 @@ class WhisperSpeechEngineTest {
                 new WhisperSettings(executable.toString(), model.toString(), "vulkan"),
                 (command, work, cancel) -> {
                     seen.addAll(command);
-                    return "bonjour";
+                    return CommandOutput.text("bonjour");
                 });
-        assertEquals("bonjour", engine.transcribe(SpeechServiceTest.wav(WavAudio.MIN_SAMPLES), new CancelToken()));
+        assertEquals("bonjour", engine.transcribe(
+                SpeechServiceTest.wav(WavAudio.MIN_SAMPLES),
+                SpeechHints.automatic(),
+                new CancelToken()).text());
         assertFalse(seen.contains("-ng"));
         assertTrue(engine.status().available());
     }
@@ -91,7 +101,7 @@ class WhisperSpeechEngineTest {
                 (command, work, cancel) -> {
                     throw new SpeechException("engine-error", 502, "Local transcription failed.");
                 });
-        SpeechException failure = assertThrows(SpeechException.class, () -> engine.transcribe(audio, new CancelToken()));
+        SpeechException failure = assertThrows(SpeechException.class, () -> engine.transcribe(audio, SpeechHints.automatic(), new CancelToken()));
         assertEquals("Local transcription failed.", failure.detail());
         assertFalse(failure.getMessage().contains("secret"));
     }
@@ -114,8 +124,33 @@ class WhisperSpeechEngineTest {
                 });
         SpeechException failure = assertThrows(
                 SpeechException.class,
-                () -> engine.transcribe(SpeechServiceTest.wav(WavAudio.MIN_SAMPLES), new CancelToken()));
+                () -> engine.transcribe(SpeechServiceTest.wav(WavAudio.MIN_SAMPLES), SpeechHints.automatic(), new CancelToken()));
         assertEquals("cancelled", failure.code());
         assertFalse(Files.exists(seen.get()));
+    }
+
+    @Test
+    void passesLanguageAndVocabularyAsSeparateArguments() throws Exception {
+        Path executable = directory.resolve("whisper-cli.exe");
+        Path model = directory.resolve("ggml-base.bin");
+        Files.write(executable, new byte[] {1});
+        Files.write(model, new byte[] {1});
+        List<String> seen = new ArrayList<>();
+        WhisperSpeechEngine engine = new WhisperSpeechEngine(
+                new WhisperSettings(executable.toString(), model.toString(), "cpu"),
+                (command, work, cancel) -> {
+                    seen.addAll(command);
+                    return CommandOutput.text("Muay Thai");
+                });
+        SpeechTranscript transcript = engine.transcribe(
+                SpeechServiceTest.wav(WavAudio.MIN_SAMPLES),
+                new SpeechHints("fr", "Muay Thai", 8_000),
+                new CancelToken());
+        assertEquals("Muay Thai", transcript.text());
+        assertEquals(8_000, transcript.recordingMs());
+        assertEquals("fr", seen.get(seen.indexOf("-l") + 1));
+        assertEquals("Muay Thai", seen.get(seen.indexOf("--prompt") + 1));
+        assertEquals(13, seen.size());
+        assertFalse(String.join("\n", seen).contains("cmd.exe"));
     }
 }

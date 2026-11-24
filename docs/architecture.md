@@ -45,7 +45,7 @@ The core is a Spring Boot 4 application on Java 21. Every route, including conve
 - `POST /api/conversation/reset` drops the transcript.
 - `POST /api/conversation/cancel` cancels the in-flight reply when the provider call can be interrupted.
 - `GET /api/speech` reports whether whisper.cpp and its model are configured.
-- `POST /api/speech/transcribe` accepts one 16 kHz mono PCM WAV body and returns `{ text }`. The bytes are not a path, and the process arguments come from `EVA_WHISPER_EXECUTABLE` and `EVA_WHISPER_MODEL`.
+- `POST /api/speech/transcribe` accepts one 16 kHz mono PCM WAV body. Optional headers `X-Eva-Language` (`auto`, `en`, `fr`, or `ar`), `X-Eva-Prompt` (a percent-encoded vocabulary hint), and `X-Eva-Recording-Ms` are checked again by the core. The response is `{ text, elapsedMs, recordingMs, loadMs, inferenceMs }`. The bytes are not a path. The process arguments come from `EVA_WHISPER_EXECUTABLE` and `EVA_WHISPER_MODEL`, plus `-l` and, only when the vocabulary is non-empty, one `--prompt` argument. Nothing in the request is written to the log.
 - `POST /api/speech/cancel` stops the in-flight transcription.
 
 `ChatProvider` is the only model interface. `OllamaChatProvider` and `OpenAiChatProvider` both implement it. `ConversationService` selects one provider from the request. It does not fall back to the other. OpenAI is refused with `cloud-denied` when `cloudEnabled` is false, and that check happens before the cloud client is used.
@@ -113,6 +113,20 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 
 **The dev server is loopback too.** Vite listens on `127.0.0.1:5173`. Production loads `frontend/dist` over `file:`.
 
+## Future: a resident whisper.cpp process
+
+The working path starts `whisper-cli` for every recording. That process loads the ggml weights, transcribes one WAV, and exits. Wall-clock time therefore includes model load every time. On CPU, multilingual Small spent most of the wait in inference; multilingual Base is the practical default because recognition is much shorter. Load time is still paid on every utterance. The status line shows the wall-clock duration. When whisper.cpp prints `load time` and `total time`, the tooltip splits model load from recognition. Those numbers, the audio, the vocabulary, and the transcript are not written to the log.
+
+A later change can keep one `whisper-server` process. That server is not implemented.
+
+**Expected shape.** Electron would start the server only from an allowlisted absolute path (`whisper-server` or `whisper-server.exe`) and the same absolute multilingual model path. The server binds `127.0.0.1` only. The renderer never talks to it. Transcription requests still enter through the session-token loopback API. The server loads the model once. Later requests carry the WAV bytes, the language, and the optional prompt. Arguments stay a fixed list. There is no shell. EVA stops the server on quit and still deletes any temporary WAV.
+
+**Security.** Another process running as the same user can still reach loopback, so the server needs its own check or should accept connections only from the local core. It must not listen on a LAN address. Vocabulary and transcripts should travel in the request body of the already-running server, not as arguments that remain visible for the whole session. The one-shot CLI path does pass `--prompt` as a single argument because `whisper-cli` has no other prompt channel; that argument lives only as long as the process and is not logged. The executable allowlist stays. The renderer and the model output cannot choose a path. EVA still does not download the binary or the model. Request bodies are not logged.
+
+**Resources.** Multilingual Base is about 150 MB of weights plus runtime memory. Small is larger and was too slow on CPU for interactive use. A resident process holds that memory for the session. Vulkan on AMD needs a whisper.cpp build with `GGML_VULKAN=ON`, a current Vulkan driver, and `EVA_WHISPER_GPU=vulkan`. GPU memory for Base is modest. Vulkan shortens inference. A resident process is what removes the repeated model load.
+
+**Install, when that work starts.** Build whisper.cpp, including the `whisper-server` target. For AMD, configure CMake with `-DGGML_VULKAN=ON`. Download a multilingual `ggml-base.bin` yourself. Do not use a `.en.bin` model, and do not commit the binary or the weights. The current setting `EVA_WHISPER_EXECUTABLE` still points at `whisper-cli`. A future setting would point at `whisper-server` instead.
+
 ## Known limitations
 
 - A process running as the same desktop user can read the Java process environment and present the session token or the OpenAI key.
@@ -120,7 +134,7 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 - Conversation context is memory only. It is gone after reset, shutdown, or a crash. There is no database.
 - Stop keeps the question and any partial text already produced. That partial text is marked stopped and is not sent as a completed answer on the next request. The question is sent.
 - Ollama must already be running and the model must already be installed. EVA will not start Ollama or pull a model.
-- whisper.cpp and a multilingual ggml model must already be installed. EVA will not download either one. CPU is the default. AMD GPU use needs a Vulkan build and `EVA_WHISPER_GPU=vulkan`. Recordings are capped at 60 seconds. Live microphone and live whisper.cpp runs depend on that local setup.
+- whisper.cpp and a multilingual ggml model must already be installed. EVA will not download either one. `ggml-base.bin` is the practical CPU default; multilingual Small was too slow because every recording reloads the model and then runs inference on the CPU. AMD GPU use needs a Vulkan build and `EVA_WHISPER_GPU=vulkan`. A resident `whisper-server` is documented and not built. Recordings are capped at 60 seconds. The vocabulary prompt is a hint. Live microphone and live whisper.cpp runs depend on that local setup.
 - OpenAI cost is an estimate from a small rate table, and only when the API returns token counts. It is not an invoice.
 - The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered. Separately, GPT-6 Luna was live-tested once through EVA with a real OpenAI key, and that send succeeded. No other OpenAI model has been live-tested.
 - If the shell process is terminated without running its quit handlers, the pid file is the recovery path. A reused pid whose command line cannot be confirmed is left alone.

@@ -56,6 +56,18 @@ class LocalCommandRunnerTest {
         assertEquals("absent", output.trim());
     }
 
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    void keepsTimingNumbersAndDropsTheProcessLog() {
+        CommandOutput output = new LocalCommandRunner().run(
+                List.of(javaBin(), "-classpath", System.getProperty("java.class.path"), TimingProbe.class.getName()),
+                Path.of(System.getProperty("java.io.tmpdir")),
+                new CancelToken());
+        assertEquals("hello", output.stdout());
+        assertEquals(12L, output.loadMillis());
+        assertEquals(40L, output.totalMillis());
+    }
+
     static String javaBin() {
         Path home = Path.of(System.getProperty("java.home"), "bin");
         Path exe = home.resolve("java.exe");
@@ -68,7 +80,7 @@ class LocalCommandRunnerTest {
                 String output = new LocalCommandRunner().run(
                         List.of(javaBin(), "-classpath", System.getProperty("java.class.path"), EnvProbe.class.getName()),
                         Path.of(System.getProperty("java.io.tmpdir")),
-                        new CancelToken());
+                        new CancelToken()).stdout();
                 System.out.print(output.trim());
             } catch (RuntimeException exception) {
                 System.out.print("failed");
@@ -80,6 +92,15 @@ class LocalCommandRunnerTest {
         public static void main(String[] args) {
             boolean leaked = System.getenv("EVA_SESSION_TOKEN") != null || System.getenv("EVA_OPENAI_API_KEY") != null;
             System.out.print(leaked ? "present" : "absent");
+        }
+    }
+
+    public static final class TimingProbe {
+        public static void main(String[] args) {
+            System.err.println("whisper_model_load: load time = 12 ms");
+            System.err.println("whisper_print_timings: total time = 40 ms");
+            System.err.println("secret phrase should stay in this log");
+            System.out.print("hello");
         }
     }
 }

@@ -94,7 +94,16 @@ function installBridge(options: {
       available: true,
       detail: "Local transcription is ready. Audio stays on this machine.",
     }),
-    transcribeSpeech: async () => ({ ok: true as const, text: "from the microphone" }),
+    getSpeechPreferences: async () => ({ language: "auto" as const, vocabulary: [] as string[] }),
+    saveSpeechPreferences: async (preferences) => preferences,
+    transcribeSpeech: async () => ({
+      ok: true as const,
+      text: "from the microphone",
+      elapsedMs: 1200,
+      recordingMs: 1000,
+      loadMs: null,
+      inferenceMs: null,
+    }),
     cancelSpeech: async () => {},
   };
   return tracker;
@@ -184,7 +193,16 @@ describe("EVA interface", () => {
         available: true,
         detail: "Local transcription is ready. Audio stays on this machine.",
       }),
-      transcribeSpeech: async () => ({ ok: true as const, text: "from the microphone" }),
+      getSpeechPreferences: async () => ({ language: "auto" as const, vocabulary: [] as string[] }),
+      saveSpeechPreferences: async (preferences) => preferences,
+      transcribeSpeech: async () => ({
+        ok: true as const,
+        text: "from the microphone",
+        elapsedMs: 1200,
+        recordingMs: 1000,
+        loadMs: null,
+        inferenceMs: null,
+      }),
       cancelSpeech: async () => {},
     };
 

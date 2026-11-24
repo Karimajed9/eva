@@ -8,6 +8,7 @@ import type {
   SpeechResult,
   SpeechStatusResult,
 } from "../../../shared/contract";
+import type { SpeechAudioRequest, SpeechPreferences } from "../../../shared/speech-preferences";
 
 export interface EvaBridge {
   getBackendStatus(): Promise<BackendStatus>;
@@ -18,7 +19,9 @@ export interface EvaBridge {
   resetConversation(): Promise<CatalogResult>;
   cancelConversation(): Promise<void>;
   getSpeechStatus(): Promise<SpeechStatusResult>;
-  transcribeSpeech(audio: Uint8Array): Promise<SpeechResult>;
+  getSpeechPreferences(): Promise<SpeechPreferences>;
+  saveSpeechPreferences(preferences: SpeechPreferences): Promise<SpeechPreferences>;
+  transcribeSpeech(request: SpeechAudioRequest): Promise<SpeechResult>;
   cancelSpeech(): Promise<void>;
   subscribeConversation(listener: (delta: ConversationDelta) => void): () => void;
 }

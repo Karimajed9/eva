@@ -28,4 +28,16 @@ export function formatDuration(elapsedMs: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+export function readyNotice(elapsedMs: number, recordingMs: number): string {
+  const transcribed = elapsedMs < 1000 ? `${elapsedMs} ms` : `${(elapsedMs / 1000).toFixed(1)} s`;
+  return `Ready to send. Recorded ${formatDuration(recordingMs)} · transcribed in ${transcribed}.`;
+}
+
+export function timingTitle(loadMs: number | null, inferenceMs: number | null): string {
+  if (loadMs === null || inferenceMs === null) {
+    return "";
+  }
+  return `Model load ${(loadMs / 1000).toFixed(1)} s · recognition ${(inferenceMs / 1000).toFixed(1)} s`;
+}
+
 export const MAX_RECORDING_MS = 60_000;

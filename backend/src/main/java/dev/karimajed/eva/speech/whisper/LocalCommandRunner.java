@@ -16,15 +16,15 @@ final class LocalCommandRunner implements CommandRunner {
 
     static final Duration TIMEOUT = Duration.ofSeconds(120);
     private static final int MAX_STDOUT = 32_000;
+    private static final int MAX_STDERR = 16_000;
 
     @Override
-    public String run(List<String> command, Path directory, CancelToken cancel) {
+    public CommandOutput run(List<String> command, Path directory, CancelToken cancel) {
         if (command == null || command.isEmpty() || directory == null) {
             throw new SpeechException("engine-error", 502, "Local transcription failed.");
         }
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(directory.toFile());
-        builder.redirectError(ProcessBuilder.Redirect.DISCARD);
         scrub(builder.environment());
         Process process;
         try {
@@ -33,10 +33,14 @@ final class LocalCommandRunner implements CommandRunner {
             throw new SpeechException("engine-error", 502, "Local transcription failed.");
         }
         cancel.onCancel(process::destroyForcibly);
-        ByteArrayOutputStream captured = new ByteArrayOutputStream();
-        Thread reader = new Thread(() -> drain(process.getInputStream(), captured), "eva-speech-stdout");
-        reader.setDaemon(true);
-        reader.start();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        Thread outReader = new Thread(() -> drain(process.getInputStream(), stdout, MAX_STDOUT), "eva-speech-stdout");
+        Thread errReader = new Thread(() -> drain(process.getErrorStream(), stderr, MAX_STDERR), "eva-speech-stderr");
+        outReader.setDaemon(true);
+        errReader.setDaemon(true);
+        outReader.start();
+        errReader.start();
         long deadline = System.nanoTime() + TIMEOUT.toNanos();
         try {
             while (process.isAlive()) {
@@ -50,7 +54,8 @@ final class LocalCommandRunner implements CommandRunner {
                 }
                 process.waitFor(100, TimeUnit.MILLISECONDS);
             }
-            reader.join(2_000);
+            outReader.join(2_000);
+            errReader.join(2_000);
         } catch (InterruptedException exception) {
             process.destroyForcibly();
             Thread.currentThread().interrupt();
@@ -63,7 +68,11 @@ final class LocalCommandRunner implements CommandRunner {
         if (process.exitValue() != 0) {
             throw new SpeechException("engine-error", 502, "Local transcription failed.");
         }
-        return captured.toString(StandardCharsets.UTF_8);
+        String timings = stderr.toString(StandardCharsets.UTF_8);
+        return new CommandOutput(
+                stdout.toString(StandardCharsets.UTF_8),
+                WhisperTimings.loadMillis(timings),
+                WhisperTimings.totalMillis(timings));
     }
 
     static void scrub(Map<String, String> environment) {
@@ -71,13 +80,13 @@ final class LocalCommandRunner implements CommandRunner {
         environment.remove("EVA_OPENAI_API_KEY");
     }
 
-    private static void drain(InputStream input, ByteArrayOutputStream captured) {
+    private static void drain(InputStream input, ByteArrayOutputStream captured, int limit) {
         try (input) {
             byte[] buffer = new byte[1024];
             int read;
             while ((read = input.read(buffer)) >= 0) {
-                if (captured.size() < MAX_STDOUT) {
-                    captured.write(buffer, 0, Math.min(read, MAX_STDOUT - captured.size()));
+                if (captured.size() < limit) {
+                    captured.write(buffer, 0, Math.min(read, limit - captured.size()));
                 }
             }
         } catch (IOException ignored) {

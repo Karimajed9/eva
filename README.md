@@ -98,17 +98,21 @@ There is no automatic fallback. A local failure stays local. A cloud failure sta
 
 ## Local speech
 
-Speech-to-text stays on this machine. EVA records from the microphone, converts the audio to 16 kHz mono PCM WAV, and sends those bytes to the local core. The core runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp) with `-l auto`. The transcript is placed in the message box. EVA does not send it until you do. Recordings are temporary files and are deleted after transcription, cancellation, or a failed run. Audio and transcript text are not written to the log.
+Speech-to-text stays on this machine. EVA records from the microphone, converts the audio to 16 kHz mono PCM WAV, and sends those bytes to the local core. The core runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp) once per recording. The transcript is placed in the message box, which scrolls when the text is longer than the box. EVA does not send it until you do. Recordings are temporary files and are deleted after transcription, cancellation, or a failed run. Audio, vocabulary, and transcript text are not written to the log.
+
+The language control defaults to automatic detection (`-l auto`). English, French, and Arabic can be selected instead. An optional vocabulary is empty until you add terms. Those terms are joined and passed as one `--prompt` argument, which is a hint to whisper.cpp rather than a guarantee. A name such as "Muay Thai" can still be missed. The vocabulary is stored in the Electron user-data file `speech-preferences.json` and is not sent anywhere else.
 
 EVA does not download whisper.cpp or a model. Set both paths before launching:
 
 ```powershell
 $env:EVA_WHISPER_EXECUTABLE = "C:\Tools\whisper\whisper-cli.exe"
-$env:EVA_WHISPER_MODEL = "C:\Tools\whisper\ggml-small.bin"
+$env:EVA_WHISPER_MODEL = "C:\Tools\whisper\ggml-base.bin"
 npm run dev
 ```
 
-The executable must be an absolute path named `whisper-cli.exe`, `whisper-cli`, `main.exe`, `main`, `whisper.exe`, or `whisper`. The model must be an absolute path to a multilingual `ggml-*.bin` file. English-only files such as `ggml-base.en.bin` are rejected because this milestone needs French and Arabic as well as English. `ggml-small.bin` is the recommended balance. Larger multilingual models also work.
+The executable must be an absolute path named `whisper-cli.exe`, `whisper-cli`, `main.exe`, `main`, `whisper.exe`, or `whisper`. The model must be an absolute path to a multilingual `ggml-*.bin` file. English-only files such as `ggml-base.en.bin` are rejected because this milestone needs French and Arabic as well as English. `ggml-base.bin` is the practical CPU default. The multilingual Small model was much slower on CPU because each utterance starts a new process, reloads the model, and then spends most of the remaining time in inference. Larger multilingual models also work, at that same cost.
+
+After a transcription, the status line shows how long the recording was and how long transcription took. When whisper.cpp prints its load and total times, hovering that line shows model load separately from recognition. Those numbers are not logged.
 
 CPU is the default. The core passes `-ng`, so a GPU build still runs on the CPU. For an AMD GPU, build whisper.cpp with Vulkan (`-DGGML_VULKAN=ON` in CMake) and start EVA with:
 

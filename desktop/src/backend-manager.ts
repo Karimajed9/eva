@@ -11,6 +11,7 @@ import {
   type ConversationResult,
   type SpeechResult,
 } from "../../shared/contract";
+import type { SpeechAudioRequest } from "../../shared/speech-preferences";
 import { callCore, streamCore, type CoreCall } from "./core-request";
 import { postSpeech } from "./speech-request";
 import { assertJava21, findFreePort, resolveJavaExecutable } from "./process-launch";
@@ -92,14 +93,17 @@ export class BackendManager {
     this.activeSpeech = null;
   }
 
-  transcribeSpeech(audio: Uint8Array): Promise<SpeechResult> {
+  transcribeSpeech(request: SpeechAudioRequest): Promise<SpeechResult> {
     const controller = new AbortController();
     this.abortSpeech();
     this.activeSpeech = controller;
     return postSpeech({
       port: this.port,
       token: this.token,
-      audio,
+      audio: request.audio,
+      language: request.language,
+      prompt: request.prompt,
+      recordingMs: request.recordingMs,
       signal: controller.signal,
     }).finally(() => {
       if (this.activeSpeech === controller) {

@@ -13,6 +13,8 @@ export const IpcChannel = {
   getSpeech: "eva:speech:get",
   transcribeSpeech: "eva:speech:transcribe",
   cancelSpeech: "eva:speech:cancel",
+  getSpeechPreferences: "eva:speech:get-preferences",
+  saveSpeechPreferences: "eva:speech:save-preferences",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -502,6 +504,10 @@ export interface SpeechStatus {
 export interface SpeechSuccess {
   ok: true;
   text: string;
+  elapsedMs: number;
+  recordingMs: number;
+  loadMs: number | null;
+  inferenceMs: number | null;
 }
 
 export interface SpeechFailure {
@@ -539,21 +545,48 @@ export function parseSpeechResult(value: unknown): SpeechResult | null {
     }
     return { ok: false, code: value.code as SpeechCode, detail: value.detail };
   }
-  if (!hasExactKeys(value, ["ok", "text"]) || value.ok !== true || typeof value.text !== "string") {
+  if (!hasExactKeys(value, ["ok", "text", "elapsedMs", "recordingMs", "loadMs", "inferenceMs"]) || value.ok !== true) {
     return null;
   }
-  const text = value.text.trim();
-  if (text.length === 0 || text.length > 4000) {
-    return null;
-  }
-  return { ok: true, text };
+  return parseSpeechTranscript({
+    text: value.text,
+    elapsedMs: value.elapsedMs,
+    recordingMs: value.recordingMs,
+    loadMs: value.loadMs,
+    inferenceMs: value.inferenceMs,
+  });
 }
 
 export function parseSpeechTranscript(value: unknown): SpeechSuccess | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["text"]) || typeof value.text !== "string") {
+  if (!isRecord(value) || !hasExactKeys(value, ["text", "elapsedMs", "recordingMs", "loadMs", "inferenceMs"])) {
     return null;
   }
-  return parseSpeechResult({ ok: true, text: value.text }) as SpeechSuccess | null;
+  if (typeof value.text !== "string") {
+    return null;
+  }
+  const text = value.text.trim();
+  const elapsedMs = parseBoundedInt(value.elapsedMs, 180_000);
+  const recordingMs = parseBoundedInt(value.recordingMs, 60_000);
+  const loadMs = parseOptionalInt(value.loadMs, 180_000);
+  const inferenceMs = parseOptionalInt(value.inferenceMs, 180_000);
+  if (text.length === 0 || text.length > 4000 || elapsedMs === null || recordingMs === null || loadMs === undefined || inferenceMs === undefined) {
+    return null;
+  }
+  return { ok: true, text, elapsedMs, recordingMs, loadMs, inferenceMs };
+}
+
+function parseBoundedInt(value: unknown, max: number): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > max) {
+    return null;
+  }
+  return value;
+}
+
+function parseOptionalInt(value: unknown, max: number): number | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  return parseBoundedInt(value, max) === null ? undefined : parseBoundedInt(value, max);
 }
 
 export function parseSpeechStatusResult(value: unknown): SpeechStatusResult | null {

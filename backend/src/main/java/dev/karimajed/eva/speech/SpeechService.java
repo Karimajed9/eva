@@ -19,7 +19,11 @@ public class SpeechService {
         return new SpeechStatus("whisper.cpp", status.available(), status.detail());
     }
 
-    public String transcribe(byte[] wav) {
+    public SpeechTranscript transcribe(byte[] wav, SpeechHints hints) {
+        if (hints == null) {
+            throw new SpeechException("invalid-audio", 400, "The speech settings were rejected.");
+        }
+        hints.check();
         EngineStatus status = engine.status();
         if (!status.available()) {
             throw new SpeechException(status.code(), status.httpStatus(), status.detail());
@@ -33,11 +37,16 @@ public class SpeechService {
             if (cancel.isCancelled()) {
                 throw new SpeechException("cancelled", 409, "Transcription was cancelled.");
             }
-            String text = engine.transcribe(wav, cancel);
-            if (text == null || text.isBlank()) {
+            SpeechTranscript transcript = engine.transcribe(wav, hints, cancel);
+            if (transcript == null || transcript.text() == null || transcript.text().isBlank()) {
                 throw new SpeechException("engine-error", 502, "No speech was recognized.");
             }
-            return text.strip();
+            return new SpeechTranscript(
+                    transcript.text().strip(),
+                    Math.max(0, transcript.elapsedMs()),
+                    hints.recordingMs(),
+                    transcript.loadMs(),
+                    transcript.inferenceMs());
         } finally {
             inFlight.compareAndSet(cancel, null);
         }

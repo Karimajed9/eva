@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConversationRequest } from "../../../shared/contract";
+import type { SpeechAudioRequest } from "../../../shared/speech-preferences";
 import { MIN_SPEECH_SAMPLES } from "../../../shared/speech-wav";
 import { App } from "../App";
 import { beginSession, openMicrophone, setMicrophoneOpener, type MicrophoneSession } from "./microphone";
@@ -12,7 +13,10 @@ afterEach(() => {
 });
 
 function install(options: {
-  transcribe?: (audio: Uint8Array) => Promise<{ ok: true; text: string } | { ok: false; code: "missing-model"; detail: string }>;
+  transcribe?: (request: SpeechAudioRequest) => Promise<
+    | { ok: true; text: string; elapsedMs?: number; recordingMs?: number; loadMs?: number | null; inferenceMs?: number | null }
+    | { ok: false; code: "missing-model"; detail: string }
+  >;
   status?: { available: boolean; detail: string };
 } = {}) {
   const sent: ConversationRequest[] = [];
@@ -72,9 +76,32 @@ function install(options: {
       available: options.status?.available ?? true,
       detail: options.status?.detail ?? "Local transcription is ready. Audio stays on this machine.",
     }),
-    transcribeSpeech: async (audio) => options.transcribe
-      ? options.transcribe(audio)
-      : { ok: true as const, text: "from the microphone" },
+    getSpeechPreferences: async () => ({ language: "auto" as const, vocabulary: [] as string[] }),
+    saveSpeechPreferences: async (preferences) => preferences,
+    transcribeSpeech: async (request) => {
+      if (!options.transcribe) {
+        return {
+          ok: true as const,
+          text: "from the microphone",
+          elapsedMs: 1800,
+          recordingMs: request.recordingMs,
+          loadMs: null,
+          inferenceMs: null,
+        };
+      }
+      const result = await options.transcribe(request);
+      if (!result.ok) {
+        return result;
+      }
+      return {
+        ok: true as const,
+        text: result.text,
+        elapsedMs: result.elapsedMs ?? 1800,
+        recordingMs: result.recordingMs ?? request.recordingMs,
+        loadMs: result.loadMs === undefined ? 700 : result.loadMs,
+        inferenceMs: result.inferenceMs === undefined ? 900 : result.inferenceMs,
+      };
+    },
     cancelSpeech: async () => {
       cancelled.speech += 1;
     },
@@ -215,5 +242,46 @@ describe("microphone transcription", () => {
     await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue("one minute"));
     expect(tracker.sent).toHaveLength(0);
     vi.restoreAllMocks();
+  });
+
+  it("sends the chosen language and vocabulary with the recording", async () => {
+    const seen: SpeechAudioRequest[] = [];
+    const tracker = install({
+      transcribe: async (request) => {
+        seen.push(request);
+        return {
+          ok: true,
+          text: "Muay Thai",
+          elapsedMs: 1800,
+          recordingMs: request.recordingMs,
+          loadMs: 700,
+          inferenceMs: 900,
+        };
+      },
+    });
+    const mic = session();
+    setMicrophoneOpener(mic.open);
+    render(<App />);
+    await screen.findByText(/local models stay on this machine/i);
+    fireEvent.change(screen.getByLabelText("Speech language"), { target: { value: "fr" } });
+    fireEvent.change(screen.getByLabelText("Add vocabulary term"), { target: { value: "tea" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Edit vocabulary term 1"), { target: { value: "Muay Thai" } });
+    fireEvent.blur(screen.getByLabelText("Edit vocabulary term 1"));
+    expect(screen.getByText("Muay Thai")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Muay Thai" }));
+    expect(screen.queryByText("Muay Thai")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Add vocabulary term"), { target: { value: "Muay Thai" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Speak" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+    await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue("Muay Thai"));
+    expect(seen[0]?.language).toBe("fr");
+    expect(seen[0]?.prompt).toBe("Muay Thai");
+    expect(screen.getByTestId("speech-status")).toHaveAttribute("title", "Model load 0.7 s · recognition 0.9 s");
+    expect(screen.getByText(/transcribed in 1\.8 s/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Message")).toHaveStyle({ overflowY: "auto" });
+    expect(tracker.sent).toHaveLength(0);
   });
 });
