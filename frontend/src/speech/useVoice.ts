@@ -51,6 +51,7 @@ export function useVoice(
   const [preferences, setPreferences] = useState<TtsPreferences>(defaultTtsPreferences);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const generation = useRef(0);
+  const saveGeneration = useRef(0);
   const preferencesRef = useRef(preferences);
   const player = useRef<SpeechPlayer | null>(null);
   const wasGenerating = useRef(false);
@@ -69,7 +70,7 @@ export function useVoice(
     }
     let live = true;
     void api.getTtsPreferences().then((saved) => {
-      if (live) {
+      if (live && saveGeneration.current === 0) {
         setPreferences(saved);
       }
     }).catch(() => {
@@ -89,15 +90,22 @@ export function useVoice(
   }, []);
 
   async function save(next: TtsPreferences): Promise<void> {
+    const ticket = saveGeneration.current + 1;
+    saveGeneration.current = ticket;
+    preferencesRef.current = next;
     setPreferences(next);
     const api = window.eva;
     if (!api) {
       return;
     }
     try {
-      setPreferences(await api.saveTtsPreferences(next));
+      const stored = await api.saveTtsPreferences(next);
+      if (ticket === saveGeneration.current) {
+        preferencesRef.current = stored;
+        setPreferences(stored);
+      }
     } catch {
-      if (generation.current >= 0) {
+      if (ticket === saveGeneration.current) {
         setNotice("Speech settings could not be saved.");
       }
     }
@@ -245,6 +253,7 @@ export function useVoice(
       void save({ ...preferencesRef.current, speed });
     },
     setVolume: (volume) => {
+      audioPlayer().setVolume(volume);
       void save({ ...preferencesRef.current, volume });
     },
     setAutoPlay: (autoPlay) => {

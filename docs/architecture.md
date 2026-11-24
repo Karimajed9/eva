@@ -120,6 +120,8 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 
 The model stays loaded. Cancel writes one line and the page stops the `AudioContext` immediately. A `Kokoro.create` call that has already started still finishes inside the worker; Java drops that audio if the request is no longer current, and it does not send the next sentence. Quitting EVA destroys the worker with the Java process tree.
 
+The worker clips samples to the range −1 to 1 and converts them to 16-bit PCM once. Java wraps those bytes as WAV without scaling them again. The page decodes that WAV into one buffer source, then connects source, gain, level meter, and speakers in a single chain. Gain is the cube of the saved slider position, ramped over 30 ms when the slider moves. Full scale stays at unity.
+
 Playback begins after a reply is complete. Sentence overlap is only that queue. Speaking while tokens are still arriving is left for a later milestone, because a stopped reply must not be spoken. Voices are the five English Kokoro ids plus `ff_siwis`. Arabic is absent from Kokoro-82M v1.0.
 
 ## Future: a resident whisper.cpp process

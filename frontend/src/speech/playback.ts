@@ -1,16 +1,54 @@
+const GAIN_RAMP_SECONDS = 0.03;
+
 export interface SpeechPlayer {
   play(wav: Uint8Array, volume: number, onLevel: (level: number) => void, onStart: () => void): Promise<void>;
+  setVolume(volume: number): void;
   stop(): void;
+}
+
+/** Slider position to amplitude. Cubic keeps steps audible; 0 is silent and 1 is unity gain. */
+export function playbackGain(volume: number): number {
+  if (!Number.isFinite(volume) || volume <= 0) {
+    return 0;
+  }
+  const position = Math.min(1, volume);
+  return position * position * position;
+}
+
+function rampGain(param: AudioParam, context: BaseAudioContext, volume: number): void {
+  const now = context.currentTime;
+  param.cancelScheduledValues(now);
+  param.setValueAtTime(param.value, now);
+  param.linearRampToValueAtTime(playbackGain(volume), now + GAIN_RAMP_SECONDS);
 }
 
 export function createSpeechPlayer(): SpeechPlayer {
   let context: AudioContext | null = null;
   let source: AudioBufferSourceNode | null = null;
+  let gain: GainNode | null = null;
+  let analyser: AnalyserNode | null = null;
+  let level = 1;
   let frame = 0;
   let stopped = false;
 
+  function releaseGraph(): void {
+    source?.disconnect();
+    gain?.disconnect();
+    analyser?.disconnect();
+    source = null;
+    gain = null;
+    analyser = null;
+  }
+
   return {
+    setVolume(volume) {
+      level = volume;
+      if (context && gain) {
+        rampGain(gain.gain, context, volume);
+      }
+    },
     async play(wav, volume, onLevel, onStart) {
+      level = volume;
       stopped = false;
       const browser = window as Window & { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
       const AudioCtor = browser.AudioContext ?? browser.webkitAudioContext;
@@ -29,22 +67,25 @@ export function createSpeechPlayer(): SpeechPlayer {
         onLevel(0);
         return;
       }
-      const gain = active.createGain();
-      gain.gain.value = Math.min(1, Math.max(0, volume));
-      const analyser = active.createAnalyser();
-      analyser.fftSize = 256;
+      releaseGraph();
+      const gainNode = active.createGain();
+      gainNode.gain.value = playbackGain(level);
+      const meter = active.createAnalyser();
+      meter.fftSize = 256;
       const node = active.createBufferSource();
       node.buffer = buffer;
-      node.connect(gain);
-      gain.connect(analyser);
-      analyser.connect(active.destination);
+      node.connect(gainNode);
+      gainNode.connect(meter);
+      meter.connect(active.destination);
       source = node;
-      const samples = new Uint8Array(analyser.fftSize);
+      gain = gainNode;
+      analyser = meter;
+      const samples = new Uint8Array(meter.fftSize);
       const pump = () => {
         if (stopped) {
           return;
         }
-        analyser.getByteTimeDomainData(samples);
+        meter.getByteTimeDomainData(samples);
         let sum = 0;
         for (const value of samples) {
           const centered = (value - 128) / 128;
@@ -71,7 +112,7 @@ export function createSpeechPlayer(): SpeechPlayer {
       stopped = true;
       cancelAnimationFrame(frame);
       const current = source;
-      source = null;
+      releaseGraph();
       if (!current) {
         return;
       }

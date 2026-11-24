@@ -8,6 +8,7 @@ import { setSpeechPlayer } from "./useVoice";
 afterEach(() => {
   setSpeechPlayer(() => ({
     play: async () => {},
+    setVolume() {},
     stop() {},
   }));
   delete window.eva;
@@ -27,6 +28,7 @@ function player(): SpeechPlayer & { plays: number } {
         seen.release = resolve;
       });
     },
+    setVolume() {},
     stop() {
       seen.release();
     },
@@ -145,6 +147,7 @@ describe("local speech playback", () => {
         onStart();
       },
       stop() {},
+      setVolume() {},
     }));
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
@@ -173,5 +176,36 @@ describe("local speech playback", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText(/model failed/i)).toBeInTheDocument();
     expect(tracker.spoken).toHaveLength(0);
+  });
+
+  it("applies one volume slider to playback immediately", async () => {
+    const played: number[] = [];
+    const live: number[] = [];
+    let release = () => {};
+    setSpeechPlayer(() => ({
+      async play(_wav, volume, _level, onStart) {
+        played.push(volume);
+        onStart();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+      setVolume(volume) {
+        live.push(volume);
+      },
+      stop() {
+        release();
+      },
+    }));
+    install();
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText("Playback volume") as HTMLInputElement).value).toBe("0.5"));
+    fireEvent.click(screen.getByRole("button", { name: "Preview voice" }));
+    await waitFor(() => expect(played).toEqual([0.5]));
+    fireEvent.change(screen.getByLabelText("Playback volume"), { target: { value: "0" } });
+    expect(live).toEqual([0]);
+    fireEvent.click(screen.getByRole("button", { name: "Stop speaking" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview voice" }));
+    await waitFor(() => expect(played).toEqual([0.5, 0]));
   });
 });
