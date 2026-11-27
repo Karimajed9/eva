@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ConversationView } from "../hooks/useConversation";
 import type { SpeechView } from "../speech/useSpeech";
 import type { VoiceView } from "../speech/useVoice";
@@ -38,6 +38,9 @@ export function ConversationPanel({ conversation, speech, voice }: ConversationP
     || cloudBlocked;
   const micDisabled = conversation.phase === "loading" || conversation.phase === "generating";
   const location = conversation.provider === "openai" ? "Cloud" : "Local";
+  const modelLabel = models.find((item) => item.id === conversation.model)?.label ?? "No model";
+  const languageLabel = speechLanguageLabel(speech.language);
+  const voiceLabel = ttsVoices.find((item) => item.id === voice.voice)?.label ?? "Voice";
 
   useEffect(() => {
     if (speech.transcriptVersion === appliedTranscript.current) {
@@ -103,46 +106,55 @@ export function ConversationPanel({ conversation, speech, voice }: ConversationP
           <p className="eyebrow">Conversation</p>
           <p className="stamp" data-testid="active-provider">{location} · {selected?.label ?? "Provider"}</p>
         </div>
-        <div className="conversation-tools">
-          <label>
-            Provider
-            <select
-              aria-label="Provider"
-              value={conversation.provider}
-              onChange={(event) => conversation.setProvider(event.target.value === "openai" ? "openai" : "ollama")}
-            >
-              <option value="ollama">Ollama · local</option>
-              <option value="openai">OpenAI · cloud</option>
-            </select>
-          </label>
-          <label>
-            Model
-            <select
-              aria-label="Model"
-              value={conversation.model}
-              onChange={(event) => conversation.setModel(event.target.value)}
-            >
-              {models.length === 0 ? <option value="">No model available</option> : null}
-              {models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-          </label>
-          <button type="button" onClick={() => void conversation.reset()}>New conversation</button>
+        <div className="panel-scroll">
+        <div className="panel-folds">
+          <Fold title="Provider" summary={`${location} · ${modelLabel}`}>
+            <div className="conversation-tools">
+              <label>
+                Provider
+                <select
+                  aria-label="Provider"
+                  value={conversation.provider}
+                  onChange={(event) => conversation.setProvider(event.target.value === "openai" ? "openai" : "ollama")}
+                >
+                  <option value="ollama">Ollama · local</option>
+                  <option value="openai">OpenAI · cloud</option>
+                </select>
+              </label>
+              <label>
+                Model
+                <select
+                  aria-label="Model"
+                  value={conversation.model}
+                  onChange={(event) => conversation.setModel(event.target.value)}
+                >
+                  {models.length === 0 ? <option value="">No model available</option> : null}
+                  {models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={() => void conversation.reset()}>New conversation</button>
+            </div>
+            {conversation.provider === "openai" ? (
+              <p className="notice" data-testid="cloud-notice">
+                Cloud mode sends this conversation to OpenAI. It stays off until you opt in, and EVA will not fall back to the cloud on its own.
+                <label className="choice">
+                  <input
+                    type="checkbox"
+                    checked={conversation.cloudEnabled}
+                    onChange={(event) => conversation.setCloudEnabled(event.target.checked)}
+                  />
+                  Send messages to OpenAI
+                </label>
+              </p>
+            ) : null}
+          </Fold>
+          <Fold title="Listening" summary={languageLabel}>
+            <SpeechSettings speech={speech} />
+          </Fold>
+          <Fold title="Voice" summary={voice.autoPlay ? `${voiceLabel} · automatic` : voiceLabel}>
+            <VoiceSettings voice={voice} />
+          </Fold>
         </div>
-        <SpeechSettings speech={speech} />
-        <VoiceSettings voice={voice} />
-        {conversation.provider === "openai" ? (
-          <p className="notice" data-testid="cloud-notice">
-            Cloud mode sends this conversation to OpenAI. It stays off until you opt in, and EVA will not fall back to the cloud on its own.
-            <label className="choice">
-              <input
-                type="checkbox"
-                checked={conversation.cloudEnabled}
-                onChange={(event) => conversation.setCloudEnabled(event.target.checked)}
-              />
-              Send messages to OpenAI
-            </label>
-          </p>
-        ) : null}
         <div className="transcript-frame">
           <div className="transcript" ref={transcript} aria-live="polite">
             {conversation.messages.length === 0 ? <p className="empty-copy">{conversation.detail}</p> : null}
@@ -198,6 +210,7 @@ export function ConversationPanel({ conversation, speech, voice }: ConversationP
             {speech.notice}
           </p>
         ) : null}
+        </div>
         <form
           ref={composer}
           className="composer"
@@ -251,6 +264,38 @@ export function ConversationPanel({ conversation, speech, voice }: ConversationP
       </HudPanel>
     </motion.div>
   );
+}
+
+function Fold({ title, summary, children }: { title: string; summary: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="fold">
+      <button
+        type="button"
+        className="fold-toggle"
+        aria-expanded={open}
+        aria-label={`${title}, ${summary}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="fold-title">{title}</span>
+        <span className="fold-summary">{summary}</span>
+      </button>
+      {open ? <div className="fold-body">{children}</div> : null}
+    </section>
+  );
+}
+
+function speechLanguageLabel(language: SpeechLanguage): string {
+  if (language === "en") {
+    return "English";
+  }
+  if (language === "fr") {
+    return "French";
+  }
+  if (language === "ar") {
+    return "Arabic";
+  }
+  return "Detect language";
 }
 
 function SpeechSettings({ speech }: { speech: SpeechView }) {

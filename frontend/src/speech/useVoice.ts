@@ -122,7 +122,7 @@ export function useVoice(
   }
 
   function speak(text: string, index: number | null): void {
-    const segments = speakableSegments(text).slice(0, 16);
+    const segments = speakableSegments(text);
     if (segments.length === 0) {
       setPhase("error");
       setNotice("Nothing to speak.");

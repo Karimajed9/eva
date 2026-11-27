@@ -5,6 +5,13 @@ import { App } from "../App";
 import type { SpeechPlayer } from "./playback";
 import { setSpeechPlayer } from "./useVoice";
 
+function showVoice(): void {
+  const toggle = screen.getByRole("button", { name: /^Voice,/ });
+  if (toggle.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(toggle);
+  }
+}
+
 afterEach(() => {
   setSpeechPlayer(() => ({
     play: async () => {},
@@ -105,6 +112,7 @@ describe("local speech playback", () => {
     });
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
+    showVoice();
     fireEvent.click(screen.getByRole("button", { name: "Preview voice" }));
     await waitFor(() => expect(tracker.spoken.length).toBeGreaterThan(0));
     expect(tracker.sent).toHaveLength(0);
@@ -132,6 +140,7 @@ describe("local speech playback", () => {
     });
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
+    showVoice();
     fireEvent.click(screen.getByRole("button", { name: "Preview voice" }));
     expect(await screen.findByText(/preparing speech/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stop speaking" }));
@@ -151,6 +160,7 @@ describe("local speech playback", () => {
     }));
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
+    showVoice();
     fireEvent.click(screen.getByRole("checkbox", { name: "Speak completed replies" }));
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -171,6 +181,7 @@ describe("local speech playback", () => {
     };
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
+    showVoice();
     fireEvent.click(screen.getByRole("checkbox", { name: "Speak completed replies" }));
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -199,6 +210,7 @@ describe("local speech playback", () => {
     }));
     install();
     render(<App />);
+    showVoice();
     await waitFor(() => expect((screen.getByLabelText("Playback volume") as HTMLInputElement).value).toBe("0.5"));
     fireEvent.click(screen.getByRole("button", { name: "Preview voice" }));
     await waitFor(() => expect(played).toEqual([0.5]));

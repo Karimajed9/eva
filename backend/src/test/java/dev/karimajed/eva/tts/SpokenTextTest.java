@@ -44,6 +44,7 @@ class SpokenTextTest {
         }
         var segments = SpokenText.segments(many.toString());
         assertTrue(segments.size() <= SpokenText.MAX_SEGMENTS);
+        assertTrue(segments.stream().allMatch(part -> part.length() <= SpokenText.MAX_SEGMENT));
         assertEquals(true, String.join(" ", segments).contains("Sentence number 0"));
         assertEquals(true, String.join(" ", segments).contains("Sentence number 29"));
     }

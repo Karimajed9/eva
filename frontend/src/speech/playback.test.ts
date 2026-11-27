@@ -12,8 +12,9 @@ describe("playbackGain", () => {
     expect(playbackGain(Number.NaN)).toBe(0);
     expect(playbackGain(1)).toBe(1);
     expect(playbackGain(1.4)).toBe(1);
-    expect(playbackGain(0.5)).toBeCloseTo(0.125);
-    expect(playbackGain(0.75)).toBeCloseTo(0.421875);
+    expect(playbackGain(0.5)).toBeCloseTo(0.1778, 3);
+    expect(playbackGain(0.25)).toBeCloseTo(0.075, 3);
+    expect(playbackGain(0.1)).toBeGreaterThan(0.04);
     expect(playbackGain(0.25)).toBeLessThan(playbackGain(0.5));
     expect(playbackGain(0.5)).toBeLessThan(0.5);
     expect(playbackGain(0.75)).toBeLessThan(playbackGain(1));
@@ -102,7 +103,7 @@ describe("createSpeechPlayer", () => {
     const player = createSpeechPlayer();
     const playing = player.play(new Uint8Array(8), 0.5, () => {}, () => {});
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(gain.value).toBeCloseTo(0.125);
+    expect(gain.value).toBeCloseTo(0.1778, 3);
     expect(links).toEqual(["source>gain", "gain>meter", "meter>speakers"]);
     player.setVolume(0);
     player.setVolume(1);

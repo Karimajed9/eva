@@ -16,7 +16,7 @@ const ABBREVIATIONS = new Set([
 ]);
 
 export const MAX_SPOKEN_CHARS = 4_000;
-export const MAX_SPEECH_SEGMENTS = 16;
+export const MAX_SPEECH_SEGMENTS = 80;
 export const MAX_SEGMENT_CHARS = 500;
 
 export function spokenText(source: string): string {
@@ -133,9 +133,17 @@ function mergeShort(parts: string[]): string[] {
 function boundSegments(parts: string[]): string[] {
   const bounded = parts.filter((part) => part.length > 0);
   while (bounded.length > MAX_SPEECH_SEGMENTS) {
-    const last = bounded.pop() ?? "";
-    const previous = bounded.pop() ?? "";
+    const last = bounded.at(-1) ?? "";
+    const previous = bounded.at(-2) ?? "";
+    if (previous.length + 1 + last.length > MAX_SEGMENT_CHARS) {
+      break;
+    }
+    bounded.pop();
+    bounded.pop();
     bounded.push(`${previous} ${last}`.trim());
   }
-  return bounded.map((part) => (part.length > MAX_SPOKEN_CHARS ? part.slice(0, MAX_SPOKEN_CHARS).trim() : part));
+  return bounded
+    .slice(0, MAX_SPEECH_SEGMENTS)
+    .map((part) => (part.length > MAX_SEGMENT_CHARS ? part.slice(0, MAX_SEGMENT_CHARS).trim() : part))
+    .filter((part) => part.length > 0);
 }

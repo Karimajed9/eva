@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   base: "./",
+  envDir: fileURLToPath(new URL(".", import.meta.url)),
   plugins: [react(), tailwindcss()],
   server: {
     host: "127.0.0.1",

@@ -6,13 +6,18 @@ export interface SpeechPlayer {
   stop(): void;
 }
 
-/** Slider position to amplitude. Cubic keeps steps audible; 0 is silent and 1 is unity gain. */
+const VOLUME_RANGE_DB = 30;
+
+/** Slider position to amplitude. Equal slider steps are equal loudness steps across 30 dB. 0 is silent and 1 is unity gain. */
 export function playbackGain(volume: number): number {
   if (!Number.isFinite(volume) || volume <= 0) {
     return 0;
   }
   const position = Math.min(1, volume);
-  return position * position * position;
+  if (position >= 1) {
+    return 1;
+  }
+  return 10 ** ((-VOLUME_RANGE_DB * (1 - position)) / 20);
 }
 
 function rampGain(param: AudioParam, context: BaseAudioContext, volume: number): void {

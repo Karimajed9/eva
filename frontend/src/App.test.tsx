@@ -10,6 +10,13 @@ import type {
 import { App } from "./App";
 import type { EvaBridge } from "./types/bridge";
 
+function showProvider(): void {
+  const toggle = screen.getByRole("button", { name: /^Provider,/ });
+  if (toggle.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(toggle);
+  }
+}
+
 const online: BackendStatus = {
   state: "up",
   detail: "The local core is online.",
@@ -163,7 +170,8 @@ describe("EVA interface", () => {
     render(<App />);
     expect(screen.getByTestId("activity-panel")).toHaveTextContent(/not connected to ai/i);
     expect(screen.getByTestId("conversation-panel")).not.toHaveTextContent(/not connected to ai/i);
-    expect(screen.getByLabelText("Provider")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Provider,/ })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Provider")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(screen.getByLabelText("Message")).toBeDisabled();
     expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "idle");
@@ -268,6 +276,7 @@ describe("EVA interface", () => {
     expect(screen.getByText("Second turn")).toBeInTheDocument();
     expect(tracker.sent.map((request) => request.provider)).toEqual(["ollama", "ollama"]);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Provider,/ }));
     fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
     expect(screen.getByTestId("cloud-notice")).toHaveTextContent(/will not fall back/i);
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Do not send this" } });
@@ -301,6 +310,7 @@ describe("EVA interface", () => {
     };
     const tracker = installBridge({ catalog: source });
     render(<App />);
+    showProvider();
     await waitFor(() => expect(screen.getByLabelText("Model")).toHaveValue("llama3.2"));
     expect(screen.getByLabelText("Provider")).toHaveValue("ollama");
 
@@ -501,6 +511,7 @@ describe("EVA interface", () => {
     expect(screen.getByTestId("ai-orb")).toHaveAttribute("data-phase", "idle");
     expect(screen.getByLabelText("Message")).toHaveValue("");
 
+    fireEvent.click(screen.getByRole("button", { name: /^Provider,/ }));
     fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
     expect(screen.getByRole("checkbox", { name: "Send messages to OpenAI" })).not.toBeChecked();
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Do not send this" } });
@@ -618,6 +629,7 @@ describe("EVA interface", () => {
     await waitFor(() => expect(screen.getByTestId("active-provider")).toHaveTextContent(/local · ollama/i));
     await sendDraft("Remember this");
     expect(await screen.findByText("Remember this")).toBeInTheDocument();
+    showProvider();
     fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     await waitFor(() => expect(screen.queryByText("Remember this")).not.toBeInTheDocument());
   });

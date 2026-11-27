@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 public final class SpokenText {
 
     public static final int MAX_CHARS = 4_000;
-    public static final int MAX_SEGMENTS = 16;
+    public static final int MAX_SEGMENTS = 80;
     public static final int MAX_SEGMENT = 500;
     private static final Set<String> ABBREVIATIONS = Set.of(
             "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "vs", "etc", "e.g", "i.e", "u.s", "u.k");
@@ -156,10 +156,25 @@ public final class SpokenText {
             }
         }
         while (bounded.size() > MAX_SEGMENTS) {
-            String last = bounded.remove(bounded.size() - 1);
-            String previous = bounded.remove(bounded.size() - 1);
+            String last = bounded.get(bounded.size() - 1);
+            String previous = bounded.get(bounded.size() - 2);
+            if (previous.length() + 1 + last.length() > MAX_SEGMENT) {
+                break;
+            }
+            bounded.remove(bounded.size() - 1);
+            bounded.remove(bounded.size() - 1);
             bounded.add((previous + " " + last).trim());
         }
+        if (bounded.size() > MAX_SEGMENTS) {
+            bounded.subList(MAX_SEGMENTS, bounded.size()).clear();
+        }
+        for (int index = 0; index < bounded.size(); index += 1) {
+            String part = bounded.get(index);
+            if (part.length() > MAX_SEGMENT) {
+                bounded.set(index, part.substring(0, MAX_SEGMENT).strip());
+            }
+        }
+        bounded.removeIf(String::isEmpty);
         return List.copyOf(bounded);
     }
 }

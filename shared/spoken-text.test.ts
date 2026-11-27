@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { speakableSegments, spokenText } from "./spoken-text";
+import { MAX_SEGMENT_CHARS, MAX_SPEECH_SEGMENTS, speakableSegments, spokenText } from "./spoken-text";
 
 describe("spoken text", () => {
   it("removes markdown, code, and long urls without keeping the original markers", () => {
@@ -33,10 +33,14 @@ describe("spoken text", () => {
     expect(segments.join(" ")).toContain("Dr. Eva");
     expect(segments.join(" ")).toContain("3.14");
     expect(segments.length).toBeGreaterThan(0);
-    expect(segments.length).toBeLessThanOrEqual(16);
+    expect(segments.length).toBeLessThanOrEqual(MAX_SPEECH_SEGMENTS);
     const many = speakableSegments(Array.from({ length: 30 }, (_, index) => `Sentence number ${index} is long enough to stand alone today.`).join(" "));
-    expect(many.length).toBeLessThanOrEqual(16);
+    expect(many.length).toBeLessThanOrEqual(MAX_SPEECH_SEGMENTS);
+    expect(many.every((part) => part.length <= MAX_SEGMENT_CHARS)).toBe(true);
     expect(many.join(" ")).toContain("Sentence number 0");
     expect(many.join(" ")).toContain("Sentence number 29");
+    const long = speakableSegments(Array.from({ length: 24 }, (_, index) => `${"word ".repeat(40)}${index}.`).join(" "));
+    expect(long.length).toBeGreaterThan(16);
+    expect(long.every((part) => part.length <= MAX_SEGMENT_CHARS)).toBe(true);
   });
 });

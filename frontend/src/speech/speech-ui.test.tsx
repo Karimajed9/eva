@@ -268,6 +268,7 @@ describe("microphone transcription", () => {
     setMicrophoneOpener(mic.open);
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
+    fireEvent.click(screen.getByRole("button", { name: /^Listening,/ }));
     fireEvent.change(screen.getByLabelText("Speech language"), { target: { value: "fr" } });
     fireEvent.change(screen.getByLabelText("Add vocabulary term"), { target: { value: "tea" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
