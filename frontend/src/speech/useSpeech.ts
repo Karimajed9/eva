@@ -9,6 +9,7 @@ import {
 } from "../../../shared/speech-preferences";
 import { bindCaptureActions } from "./audio-device-actions";
 import { stopActiveProbe } from "./audio-device-model";
+import { audioRouteReady, whenAudioRouteReady } from "./audio-route";
 import { openRecording, type MicrophoneSession } from "./microphone";
 import { describeMicrophoneFailure, formatDuration, MAX_RECORDING_MS, readyNotice, timingTitle } from "./speech-state";
 
@@ -258,8 +259,20 @@ export function useSpeech(coreState: BackendState, beforeStart?: () => void): Sp
     epoch.current = id;
     armingRef.current = true;
     setArming(true);
-    setNotice("Requesting microphone access.");
-    void openRecording().then((session) => {
+    setNotice(audioRouteReady() ? "Requesting microphone access." : "Checking audio devices.");
+    void whenAudioRouteReady().then((settled) => {
+      if (epoch.current !== id) {
+        return null;
+      }
+      if (!settled) {
+        throw new Error("Audio devices could not be listed.");
+      }
+      setNotice("Requesting microphone access.");
+      return openRecording();
+    }).then((session) => {
+      if (!session) {
+        return;
+      }
       if (epoch.current !== id) {
         session.cancel();
         return;

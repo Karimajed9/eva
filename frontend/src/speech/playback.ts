@@ -1,4 +1,4 @@
-import { playbackAllowed, playbackSink } from "./audio-route";
+import { playbackAllowed, playbackSink, whenAudioRouteReady } from "./audio-route";
 
 const GAIN_RAMP_SECONDS = 0.03;
 
@@ -114,6 +114,14 @@ export function createSpeechPlayer(): SpeechPlayer {
     async play(wav, volume, onLevel, onStart) {
       level = volume;
       stopped = false;
+      const settled = await whenAudioRouteReady();
+      if (stopped) {
+        onLevel(0);
+        return;
+      }
+      if (!settled) {
+        throw new Error("Audio devices could not be listed.");
+      }
       if (!playbackAllowed()) {
         throw new Error("The selected speaker is disconnected. Choose a device or system default before EVA speaks.");
       }

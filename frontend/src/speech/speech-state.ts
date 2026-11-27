@@ -21,6 +21,9 @@ export function describeMicrophoneFailure(error: unknown): string {
   if (error instanceof Error && /already in progress/i.test(error.message)) {
     return "A recording is already in progress.";
   }
+  if (error instanceof Error && /still starting|could not be listed/i.test(error.message)) {
+    return error.message;
+  }
   return "The microphone could not be opened.";
 }
 

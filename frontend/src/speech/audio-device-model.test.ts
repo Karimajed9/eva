@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AudioDevicePreferences } from "../../../shared/audio-device-preferences";
 import { SYSTEM_AUDIO_DEVICE } from "../../../shared/audio-device-preferences";
 import type { ListedDevice, MicrophoneAudioConstraints } from "../../../shared/audio-devices";
 import type { AudioDeviceActions } from "./audio-device-actions";
 import { AudioDeviceModel, type AudioDevicePorts, type OpenInput } from "./audio-device-model";
-import { captureDevice, playbackAllowed } from "./audio-route";
+import { audioRouteReady, captureDevice, playbackAllowed, playbackSink, resetAudioRoute } from "./audio-route";
 import type { SinkResult } from "./playback";
 
 function mic(deviceId: string, label = deviceId): ListedDevice {
@@ -90,6 +90,10 @@ function harness(options: {
     },
   };
 }
+
+afterEach(() => {
+  resetAudioRoute();
+});
 
 describe("audio device model", () => {
   it("keeps the system default and an explicit microphone separate", async () => {
@@ -242,6 +246,76 @@ describe("audio device model", () => {
     await rig.model.allowAccess();
     expect(rig.opened.at(-1)?.deviceId).toBeUndefined();
     expect(rig.closed.length).toBeGreaterThan(0);
+  });
+
+  it("does not fall back to the system devices while preferences are still loading", async () => {
+    const gate: { release: (devices: ListedDevice[]) => void } = { release: () => {} };
+    const opened: string[] = [];
+    const model = new AudioDeviceModel({
+      enumerate: () => new Promise<ListedDevice[]>((resolve) => {
+        gate.release = resolve;
+      }),
+      openInput: async (constraints) => {
+        opened.push(constraints.deviceId?.exact ?? "default");
+        return { level: () => 0, stop() {}, onEnded() {} };
+      },
+      readPreferences: async () => ({ inputDeviceId: "mic-a", outputDeviceId: "spk-a" }),
+      writePreferences: async (preferences) => preferences,
+    });
+    const loading = model.load();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(audioRouteReady()).toBe(false);
+    expect(playbackAllowed()).toBe(false);
+    expect(model.snapshot().ready).toBe(false);
+    await model.startProbe();
+    expect(opened).toEqual([]);
+    expect(model.snapshot().notice).toMatch(/checking audio devices/i);
+    gate.release([mic("mic-a", "Headset"), speaker("spk-a", "HDMI")]);
+    await loading;
+    expect(audioRouteReady()).toBe(true);
+    expect(captureDevice()).toBe("mic-a");
+    expect(playbackSink()).toBe("spk-a");
+    expect(playbackAllowed()).toBe(true);
+    expect(model.playbackAllowed()).toBe(true);
+  });
+
+  it("uses the system microphone only after the saved one is confirmed missing", async () => {
+    const gate: { release: (devices: ListedDevice[]) => void } = { release: () => {} };
+    const model = new AudioDeviceModel({
+      enumerate: () => new Promise<ListedDevice[]>((resolve) => {
+        gate.release = resolve;
+      }),
+      openInput: async () => ({ level: () => 0, stop() {}, onEnded() {} }),
+      readPreferences: async () => ({ inputDeviceId: "mic-a", outputDeviceId: "spk-a" }),
+      writePreferences: async (preferences) => preferences,
+    });
+    const loading = model.load();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(audioRouteReady()).toBe(false);
+    expect(playbackAllowed()).toBe(false);
+    gate.release([mic("mic-b", "Other"), speaker("spk-b", "Other speaker")]);
+    await loading;
+    expect(model.snapshot().inputMissing).toBe(true);
+    expect(captureDevice()).toBe(SYSTEM_AUDIO_DEVICE);
+    expect(playbackAllowed()).toBe(false);
+    expect(playbackSink()).toBe("");
+  });
+
+  it("does not switch to the system default when the device list cannot be read", async () => {
+    const model = new AudioDeviceModel({
+      enumerate: async () => {
+        throw new Error("unavailable");
+      },
+      openInput: async () => ({ level: () => 0, stop() {}, onEnded() {} }),
+      readPreferences: async () => ({ inputDeviceId: "mic-a", outputDeviceId: "spk-a" }),
+      writePreferences: async (preferences) => preferences,
+    });
+    await model.load();
+    expect(audioRouteReady()).toBe(false);
+    expect(playbackAllowed()).toBe(false);
+    expect(model.snapshot().ready).toBe(false);
+    expect(model.snapshot().notice).toMatch(/could not be listed/i);
+    expect(model.snapshot().inputMissing).toBe(false);
   });
 
   it("recovers when saved settings cannot be read", async () => {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { SYSTEM_AUDIO_DEVICE } from "../../../shared/audio-device-preferences";
 import { MIN_SPEECH_SAMPLES } from "../../../shared/speech-wav";
-import { setCaptureDevice } from "./audio-route";
+import { markAudioRouteSettled, resetAudioRoute, setCaptureDevice } from "./audio-route";
 import { beginSession, openMicrophone, recordingActive, releaseStream } from "./microphone";
 import { describeMicrophoneFailure, formatDuration } from "./speech-state";
 
@@ -65,13 +65,27 @@ const originalDevices = navigator.mediaDevices;
 
 afterEach(() => {
   Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalDevices });
-  setCaptureDevice(SYSTEM_AUDIO_DEVICE);
+  resetAudioRoute();
 });
 
 describe("openMicrophone", () => {
+  it("waits to open a microphone until the saved device list is ready", async () => {
+    resetAudioRoute();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          throw new Error("opened too early");
+        },
+      },
+    });
+    await expect(openMicrophone()).rejects.toThrow(/still starting/i);
+  });
+
   it("asks for the system default without a pinned device id", async () => {
     const seen: unknown[] = [];
     setCaptureDevice(SYSTEM_AUDIO_DEVICE);
+    markAudioRouteSettled();
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
@@ -91,6 +105,7 @@ describe("openMicrophone", () => {
   it("pins an explicit microphone id", async () => {
     const seen: Array<{ audio?: { deviceId?: { exact: string } } }> = [];
     setCaptureDevice("mic-a");
+    markAudioRouteSettled();
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {

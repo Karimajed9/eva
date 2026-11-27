@@ -1,7 +1,7 @@
 import { microphoneConstraints } from "../../../shared/audio-devices";
 import { samplesToSpeechWav } from "../../../shared/speech-wav";
 import { audioDeviceActions } from "./audio-device-actions";
-import { captureDevice } from "./audio-route";
+import { audioRouteReady, captureDevice } from "./audio-route";
 
 export interface CaptureResources {
   level(): number;
@@ -85,6 +85,9 @@ export function openRecording(): Promise<MicrophoneSession> {
 }
 
 export async function openMicrophone(): Promise<MicrophoneSession> {
+  if (!audioRouteReady()) {
+    throw new Error("Audio devices are still starting.");
+  }
   if (active) {
     throw new Error("A recording is already in progress.");
   }

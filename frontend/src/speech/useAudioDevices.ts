@@ -20,6 +20,7 @@ const emptySnapshot: AudioDeviceSnapshot = {
   inputMissing: false,
   outputMissing: false,
   labelsReady: false,
+  ready: false,
   probing: false,
   probeLevel: 0,
   notice: "",

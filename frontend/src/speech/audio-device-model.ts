@@ -15,7 +15,7 @@ import {
   type MicrophoneAudioConstraints,
 } from "../../../shared/audio-devices";
 import { audioDeviceActions, type AudioDeviceActions } from "./audio-device-actions";
-import { setCaptureDevice, setPlaybackRoute } from "./audio-route";
+import { failAudioRoute, markAudioRouteSettled, setCaptureDevice, setPlaybackRoute } from "./audio-route";
 
 export interface OpenInput {
   level(): number;
@@ -38,6 +38,7 @@ export interface AudioDeviceSnapshot {
   inputMissing: boolean;
   outputMissing: boolean;
   labelsReady: boolean;
+  ready: boolean;
   probing: boolean;
   probeLevel: number;
   notice: string;
@@ -62,6 +63,7 @@ export class AudioDeviceModel {
   private inputMissing = false;
   private outputMissing = false;
   private outputHeld = false;
+  private settled = false;
   private probing = false;
   private probeLevel = 0;
   private notice = "";
@@ -94,6 +96,7 @@ export class AudioDeviceModel {
       inputMissing: this.inputMissing,
       outputMissing: this.outputMissing,
       labelsReady: labelsAvailable([...this.inputs, ...this.outputs]),
+      ready: this.settled,
       probing: this.probing,
       probeLevel: this.probeLevel,
       notice: this.notice,
@@ -105,7 +108,7 @@ export class AudioDeviceModel {
   }
 
   playbackAllowed(): boolean {
-    return !this.outputHeld;
+    return this.settled && !this.outputHeld;
   }
 
   async load(): Promise<void> {
@@ -128,6 +131,9 @@ export class AudioDeviceModel {
         return;
       }
       this.notice = "Audio devices could not be listed.";
+      if (!this.settled) {
+        failAudioRoute();
+      }
       this.emit();
       return;
     }
@@ -138,7 +144,7 @@ export class AudioDeviceModel {
   }
 
   async selectInput(deviceId: string): Promise<void> {
-    if (!this.known(deviceId, this.inputs)) {
+    if (!this.settled || !this.known(deviceId, this.inputs)) {
       return;
     }
     if (this.actions.captureBusy()) {
@@ -148,7 +154,7 @@ export class AudioDeviceModel {
   }
 
   async selectOutput(deviceId: string): Promise<void> {
-    if (!this.known(deviceId, this.outputs)) {
+    if (!this.settled || !this.known(deviceId, this.outputs)) {
       return;
     }
     const changed = deviceId !== this.preferences.outputDeviceId;
@@ -177,6 +183,11 @@ export class AudioDeviceModel {
   }
 
   async allowAccess(): Promise<void> {
+    if (!this.settled) {
+      this.notice = "Checking audio devices.";
+      this.emit();
+      return;
+    }
     this.stopProbe();
     try {
       const handle = await this.ports.openInput(microphoneConstraints(SYSTEM_AUDIO_DEVICE));
@@ -191,6 +202,11 @@ export class AudioDeviceModel {
   }
 
   async startProbe(): Promise<void> {
+    if (!this.settled) {
+      this.notice = "Checking audio devices.";
+      this.emit();
+      return;
+    }
     if (this.actions.captureBusy()) {
       this.notice = "Stop the conversation recording before testing the microphone.";
       this.emit();
@@ -287,6 +303,15 @@ export class AudioDeviceModel {
     this.inputs = listedDevices(devices, "audioinput");
     this.outputs = listedDevices(devices, "audiooutput");
     this.publishRoute();
+    if (!this.settled) {
+      this.settled = true;
+      if (this.notice === "Audio devices could not be listed.") {
+        this.notice = "";
+      }
+      markAudioRouteSettled();
+      this.emit();
+      return;
+    }
     if (this.inputMissing && !beforeInputMissing && this.actions.captureBusy()) {
       this.actions.discardRecording("The microphone was disconnected. This recording was discarded.");
     }

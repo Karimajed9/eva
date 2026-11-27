@@ -167,7 +167,7 @@ If the paths are missing, Listen says so and chat continues.
 
 ## Audio devices
 
-Open **Audio** in the conversation panel to choose the microphone and the speaker independently. **System default** follows the Windows default device. It is not a saved physical id, so a later change in Windows Sound settings is picked up the next time EVA records or speaks.
+Open **Audio** in the conversation panel to choose the microphone and the speaker independently. **System default** follows the Windows default device. It is not a saved physical id, so a later change in Windows Sound settings is picked up the next time EVA records or speaks. Speak and playback wait until the saved choice and the device list have loaded. EVA does not use the system default while that is still in progress. A saved microphone is used when it is present. It falls back to the system default only after the list shows that it is gone.
 
 Choosing a named microphone uses that device for Speak. Changing it while a recording is in progress discards that recording; EVA does not switch devices halfway through. **Test microphone** shows a live level and then stops. The test is not sent to Whisper, Ollama, OpenAI, or Kokoro, and it is not stored. Closing Audio, stopping the test, or starting Speak releases the microphone. EVA does not open the microphone when it launches or when the panel is opened. If device names are blank, **Allow audio access** opens the microphone once so the browser can reveal them, then closes it. **Refresh devices** asks the operating system again.
 

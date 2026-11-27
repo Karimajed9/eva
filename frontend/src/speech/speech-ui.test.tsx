@@ -214,7 +214,7 @@ describe("microphone transcription", () => {
     await screen.findByText(/local models stay on this machine/i);
     fireEvent.click(screen.getByRole("button", { name: "Speak" }));
     fireEvent.click(screen.getByRole("button", { name: "Speak" }));
-    expect(opened).toBe(1);
+    await waitFor(() => expect(opened).toBe(1));
     release();
     fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
     expect(await screen.findByText(/transcribing on this machine/i)).toBeInTheDocument();

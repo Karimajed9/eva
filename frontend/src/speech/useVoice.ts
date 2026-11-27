@@ -12,7 +12,7 @@ import {
 import type { PanelPhase } from "../hooks/useConversation";
 import type { ConversationMessage } from "../../../shared/contract";
 import { bindPlaybackActions } from "./audio-device-actions";
-import { playbackAllowed } from "./audio-route";
+import { audioRouteReady, playbackAllowed, whenAudioRouteReady } from "./audio-route";
 import { createSpeechPlayer, type SpeechPlayer } from "./playback";
 
 export type VoicePhase = "idle" | "preparing" | "speaking" | "error";
@@ -150,7 +150,7 @@ export function useVoice(
       setNotice("Nothing to speak.");
       return;
     }
-    if (!playbackAllowed()) {
+    if (audioRouteReady() && !playbackAllowed()) {
       setPhase("error");
       setNotice("The selected speaker is disconnected. Choose a device or system default before EVA speaks.");
       return;
@@ -174,6 +174,20 @@ export function useVoice(
         setPhase("error");
         setNotice("The local core is not running.");
       }
+      return;
+    }
+    const settled = await whenAudioRouteReady();
+    if (epoch !== generation.current) {
+      return;
+    }
+    if (!settled) {
+      setPhase("error");
+      setNotice("Audio devices could not be listed.");
+      return;
+    }
+    if (!playbackAllowed()) {
+      setPhase("error");
+      setNotice("The selected speaker is disconnected. Choose a device or system default before EVA speaks.");
       return;
     }
     const started = performance.now();

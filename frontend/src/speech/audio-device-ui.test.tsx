@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AudioDevicePreferences } from "../../../shared/audio-device-preferences";
 import type { MicrophoneAudioConstraints } from "../../../shared/audio-devices";
 import { App } from "../App";
+import { resetAudioRoute } from "./audio-route";
 import { beginSession, setMicrophoneOpener } from "./microphone";
 import { setAudioDevicePorts } from "./useAudioDevices";
 import type { OpenInput } from "./audio-device-model";
 
 afterEach(() => {
+  resetAudioRoute();
   setAudioDevicePorts(null);
   setMicrophoneOpener(async () => {
     throw new Error("unexpected microphone");
@@ -140,5 +142,37 @@ describe("audio device settings", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Audio,/ }));
     await waitFor(() => expect(tracker.stopped.length).toBeGreaterThan(0));
     view.unmount();
+  });
+
+  it("does not record until the saved microphone has been resolved", async () => {
+    let release: (devices: Array<{ deviceId: string; kind: string; label: string }>) => void = () => {};
+    let recordings = 0;
+    install();
+    resetAudioRoute();
+    setAudioDevicePorts(() => ({
+      enumerate: () => new Promise((resolve) => {
+        release = resolve;
+      }),
+      openInput: async () => ({ level: () => 0, stop() {}, onEnded() {} }),
+      readPreferences: async () => ({ inputDeviceId: "mic-a", outputDeviceId: "spk-a" }),
+      writePreferences: async (preferences) => preferences,
+    }));
+    setMicrophoneOpener(async () => {
+      recordings += 1;
+      return beginSession({
+        level: () => 0.2,
+        capture: async () => ({ samples: new Float32Array(1600), sampleRate: 16_000 }),
+        stopTracks() {},
+        close: async () => {},
+      });
+    });
+    render(<App />);
+    await screen.findByText(/local models stay on this machine/i);
+    fireEvent.click(screen.getByRole("button", { name: "Speak" }));
+    expect(await screen.findByText(/checking audio devices/i)).toBeInTheDocument();
+    expect(recordings).toBe(0);
+    release([{ deviceId: "mic-a", kind: "audioinput", label: "Headset mic" }, { deviceId: "spk-a", kind: "audiooutput", label: "HDMI" }]);
+    expect(await screen.findByText(/recording 0:00/i)).toBeInTheDocument();
+    expect(recordings).toBe(1);
   });
 });

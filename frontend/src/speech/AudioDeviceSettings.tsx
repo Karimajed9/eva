@@ -15,6 +15,7 @@ export function AudioDeviceSettings({ devices, voice }: { devices: AudioDeviceVi
         <select
           aria-label="Input device"
           value={devices.inputDeviceId}
+          disabled={!devices.ready}
           onChange={(event) => devices.setInput(event.target.value)}
         >
           <option value={SYSTEM_AUDIO_DEVICE}>System default</option>
@@ -24,6 +25,7 @@ export function AudioDeviceSettings({ devices, voice }: { devices: AudioDeviceVi
           ))}
         </select>
       </label>
+      {devices.ready ? null : <p className="device-note">{devices.notice || "Checking audio devices."}</p>}
       <p className="device-note">Changing the microphone discards a recording that is already in progress.</p>
       {devices.inputMissing ? (
         <p className="device-note">The selected microphone is disconnected. New recordings use the system default until it returns.</p>
@@ -37,7 +39,7 @@ export function AudioDeviceSettings({ devices, voice }: { devices: AudioDeviceVi
         {devices.probing ? (
           <button type="button" onClick={devices.stopProbe}>Stop test</button>
         ) : (
-          <button type="button" onClick={devices.startProbe}>Test microphone</button>
+          <button type="button" onClick={devices.startProbe} disabled={!devices.ready}>Test microphone</button>
         )}
         <button type="button" onClick={devices.refresh}>Refresh devices</button>
       </div>
@@ -52,6 +54,7 @@ export function AudioDeviceSettings({ devices, voice }: { devices: AudioDeviceVi
         <select
           aria-label="Output device"
           value={devices.outputDeviceId}
+          disabled={!devices.ready}
           onChange={(event) => devices.setOutput(event.target.value)}
         >
           <option value={SYSTEM_AUDIO_DEVICE}>System default</option>
@@ -83,7 +86,7 @@ export function AudioDeviceSettings({ devices, voice }: { devices: AudioDeviceVi
       >
         Test output
       </button>
-      {devices.notice ? <p className="device-note">{devices.notice}</p> : null}
+      {devices.ready && devices.notice ? <p className="device-note">{devices.notice}</p> : null}
     </div>
   );
 }
