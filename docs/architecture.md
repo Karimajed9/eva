@@ -110,7 +110,7 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 
 **The activity feed is still presentational.** It is not an automation log. Conversation and local speech recognition are separate from it. Speech uses `SpeechEngine`, implemented by whisper.cpp. The desktop captures the microphone only for the trusted window, and the renderer cannot choose the executable or the model path. A later capability still needs an explicit IPC channel and a backend route, both of which inherit the checks above.
 
-**Microphone permission is audio-only.** Electron denies every other permission. `media` is granted only for the main frame of the Vite origin in development, or the built `index.html` in production, and only when the request is audio without video. Display capture stays denied.
+**Microphone permission is audio-only.** Electron denies every other permission except a narrow `speaker-selection` grant. `media` is granted only for the main frame of the Vite origin in development, or the built `index.html` in production, and only when the request is audio without video. `speaker-selection` uses the same origin and main-frame check so `AudioContext.setSinkId()` can target a speaker. Camera, display capture, USB, and every other permission stay denied. `webSecurity` stays on.
 
 **The dev server is loopback too.** Vite listens on `127.0.0.1:5173`. Production loads `frontend/dist` over `file:`.
 
@@ -120,9 +120,17 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 
 The model stays loaded. Cancel writes one line and the page stops the `AudioContext` immediately. A `Kokoro.create` call that has already started still finishes inside the worker; Java drops that audio if the request is no longer current, and it does not send the next sentence. Quitting EVA destroys the worker with the Java process tree.
 
-The worker clips samples to the range −1 to 1 and converts them to 16-bit PCM once. Java wraps those bytes as WAV without scaling them again. The page decodes that WAV into one buffer source, then connects source, gain, level meter, and speakers in a single chain. Gain follows the slider in even loudness steps across 30 dB, ramped over 30 ms when the slider moves. Full scale stays at unity. Zero is silent.
+The worker clips samples to the range −1 to 1 and converts them to 16-bit PCM once. Java wraps those bytes as WAV without scaling them again. The page decodes that WAV into one buffer source, then connects source, gain, level meter, and the context destination in a single chain. Gain follows the slider in even loudness steps across 30 dB, ramped over 30 ms when the slider moves. Full scale stays at unity. Zero is silent. Electron 45.4.1's Chromium supports `AudioContext.setSinkId()`. EVA calls that on the existing context. The graph is not rebuilt and an `<audio>` element is not added, so sound is not connected to two outputs. Changing the sink stops the current buffer. The next buffer uses the new device. A missing `setSinkId` refuses a chosen speaker and still plays the system default.
 
 Playback begins after a reply is complete. Sentence overlap is only that queue. Speaking while tokens are still arriving is left for a later milestone, because a stopped reply must not be spoken. Voices are the five English Kokoro ids plus `ff_siwis`. Arabic is absent from Kokoro-82M v1.0.
+
+## Audio devices
+
+Device choice stays in the renderer. There is no Java route and no Python change. `enumerateDevices()` fills the Audio section. `getUserMedia({ deviceId: { exact } })` records and tests a chosen microphone. Omitting `deviceId` follows the OS default on the next capture. A recording that is already open is discarded if the user picks another microphone or the track ends. The test path is an analyser only: no `MediaRecorder`, no WAV, and no `/api/speech` call. Tracks close when the test stops, the Audio section unmounts, Speak starts, or the window closes.
+
+Output preference is an `AudioContext` sink id. An empty id is the system default. The preferred id and the id actually available are separate. If the preferred speaker is absent, playback is held and is not moved to another device. When that id is listed again, the sink is armed and nothing plays until the user asks. Preferences live in `audio-device-preferences.json` under Electron user data, with exactly `inputDeviceId` and `outputDeviceId`. Invalid files become `default` for both. The ids are not added to conversation or speech requests and are not logged.
+
+`devicechange` refreshes the lists. A stale enumeration is dropped when a newer one finished first. Closing the window removes that listener, stops microphone tracks, and closes the playback context.
 
 ## Future: a resident whisper.cpp process
 
@@ -147,6 +155,7 @@ A later change can keep one `whisper-server` process. That server is not impleme
 - Ollama must already be running and the model must already be installed. EVA will not start Ollama or pull a model.
 - whisper.cpp and a multilingual ggml model must already be installed. EVA will not download either one. `ggml-base.bin` is the practical CPU default; multilingual Small was too slow because every recording reloads the model and then runs inference on the CPU. AMD GPU use needs a Vulkan build and `EVA_WHISPER_GPU=vulkan`. A resident `whisper-server` is documented and not built. Recordings are capped at 60 seconds. The vocabulary prompt is a hint. Live microphone and live whisper.cpp runs depend on that local setup.
 - Kokoro playback needs Python 3.12, the pinned packages in `speech/kokoro/requirements.txt`, and the two v1.0 weight files. EVA does not download them. The worker uses the CPU runtime so the AMD GPU stays available for Ollama. One ONNX call cannot be interrupted; stopping speech drops the audio and skips the rest of the queue. French is `ff_siwis` only. Arabic is not available. Mid-reply speech during token streaming is not implemented.
+- Audio device ids come from Chromium and can change between sessions, especially for Bluetooth. EVA will not substitute a different device that happens to have the same label. Switching output during playback stops the current sound instead of retargeting a live buffer. A recording that starts before the device list has loaded uses the system default.
 - OpenAI cost is an estimate from a small rate table, and only when the API returns token counts. It is not an invoice.
 - The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered. Separately, GPT-6 Luna was live-tested once through EVA with a real OpenAI key, and that send succeeded. No other OpenAI model has been live-tested.
 - If the shell process is terminated without running its quit handlers, the pid file is the recovery path. A reused pid whose command line cannot be confirmed is left alone.
@@ -156,4 +165,4 @@ A later change can keep one `whisper-server` process. That server is not impleme
 
 ## Not in this milestone
 
-Text-to-speech, wake-word activation, always-on listening, computer automation, tool execution, Gmail, calendar, permanent memory, SQLite, background tasks, and hosting the core off this machine are planned only in the sense that they are intentionally absent. They are not stubbed as working features.
+Wake-word activation, always-on listening, computer automation, tool execution, Gmail, calendar, permanent memory, SQLite, background tasks, and hosting the core off this machine are planned only in the sense that they are intentionally absent. They are not stubbed as working features.

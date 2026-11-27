@@ -1,6 +1,8 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { SYSTEM_AUDIO_DEVICE } from "../../../shared/audio-device-preferences";
 import { MIN_SPEECH_SAMPLES } from "../../../shared/speech-wav";
-import { describe, expect, it } from "vitest";
-import { beginSession, recordingActive, releaseStream } from "./microphone";
+import { setCaptureDevice } from "./audio-route";
+import { beginSession, openMicrophone, recordingActive, releaseStream } from "./microphone";
 import { describeMicrophoneFailure, formatDuration } from "./speech-state";
 
 function resources(options: {
@@ -52,8 +54,53 @@ describe("microphone session", () => {
     expect(stopped).toEqual(["mic"]);
     expect(describeMicrophoneFailure(new DOMException("no", "NotAllowedError"))).toMatch(/permission was denied/i);
     expect(describeMicrophoneFailure(new DOMException("missing", "NotFoundError"))).toMatch(/no microphone/i);
+    expect(describeMicrophoneFailure(new DOMException("gone", "OverconstrainedError"))).toMatch(/selected microphone/i);
     expect(describeMicrophoneFailure(new DOMException("busy", "NotReadableError"))).toMatch(/unavailable/i);
     expect(formatDuration(12_400)).toBe("0:12");
     expect(formatDuration(60_000)).toBe("1:00");
+  });
+});
+
+const originalDevices = navigator.mediaDevices;
+
+afterEach(() => {
+  Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalDevices });
+  setCaptureDevice(SYSTEM_AUDIO_DEVICE);
+});
+
+describe("openMicrophone", () => {
+  it("asks for the system default without a pinned device id", async () => {
+    const seen: unknown[] = [];
+    setCaptureDevice(SYSTEM_AUDIO_DEVICE);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (constraints: unknown) => {
+          seen.push(constraints);
+          throw new DOMException("stop", "NotFoundError");
+        },
+      },
+    });
+    await expect(openMicrophone()).rejects.toThrow();
+    expect(seen).toEqual([{
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      video: false,
+    }]);
+  });
+
+  it("pins an explicit microphone id", async () => {
+    const seen: Array<{ audio?: { deviceId?: { exact: string } } }> = [];
+    setCaptureDevice("mic-a");
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (constraints: { audio?: { deviceId?: { exact: string } } }) => {
+          seen.push(constraints);
+          throw new DOMException("stop", "NotFoundError");
+        },
+      },
+    });
+    await expect(openMicrophone()).rejects.toThrow();
+    expect(seen[0]?.audio?.deviceId).toEqual({ exact: "mic-a" });
   });
 });

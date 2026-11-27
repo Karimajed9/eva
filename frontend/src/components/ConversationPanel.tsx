@@ -2,6 +2,8 @@ import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ConversationView } from "../hooks/useConversation";
 import type { SpeechView } from "../speech/useSpeech";
+import { AudioDeviceSettings } from "../speech/AudioDeviceSettings";
+import type { AudioDeviceView } from "../speech/useAudioDevices";
 import type { VoiceView } from "../speech/useVoice";
 import { ttsVoices, type TtsVoiceId } from "../../../shared/tts-preferences";
 import type { SpeechLanguage } from "../../../shared/speech-preferences";
@@ -17,9 +19,10 @@ interface ConversationPanelProps {
   conversation: ConversationView;
   speech: SpeechView;
   voice: VoiceView;
+  devices: AudioDeviceView;
 }
 
-export function ConversationPanel({ conversation, speech, voice }: ConversationPanelProps) {
+export function ConversationPanel({ conversation, speech, voice, devices }: ConversationPanelProps) {
   const reduced = useReducedMotion();
   const [draft, setDraft] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
@@ -150,6 +153,9 @@ export function ConversationPanel({ conversation, speech, voice }: ConversationP
           </Fold>
           <Fold title="Listening" summary={languageLabel}>
             <SpeechSettings speech={speech} />
+          </Fold>
+          <Fold title="Audio" summary={audioSummary(devices)}>
+            <AudioDeviceSettings devices={devices} voice={voice} />
           </Fold>
           <Fold title="Voice" summary={voice.autoPlay ? `${voiceLabel} · automatic` : voiceLabel}>
             <VoiceSettings voice={voice} />
@@ -283,6 +289,16 @@ function Fold({ title, summary, children }: { title: string; summary: string; ch
       {open ? <div className="fold-body">{children}</div> : null}
     </section>
   );
+}
+
+function audioSummary(devices: AudioDeviceView): string {
+  const input = devices.inputDeviceId === "default"
+    ? "System default"
+    : devices.inputs.find((device) => device.deviceId === devices.inputDeviceId)?.label.trim().slice(0, 32) || "Microphone";
+  const output = devices.outputDeviceId === "default"
+    ? "System default"
+    : devices.outputs.find((device) => device.deviceId === devices.outputDeviceId)?.label.trim().slice(0, 32) || "Speaker";
+  return `${input} · ${output}`;
 }
 
 function speechLanguageLabel(language: SpeechLanguage): string {
@@ -436,18 +452,6 @@ function VoiceSettings({ voice }: { voice: VoiceView }) {
           value={voice.speed}
           disabled={locked}
           onChange={(event) => voice.setSpeed(Number(event.target.value))}
-        />
-      </label>
-      <label>
-        Volume
-        <input
-          aria-label="Playback volume"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={voice.volume}
-          onChange={(event) => voice.setVolume(Number(event.target.value))}
         />
       </label>
       <label className="choice">

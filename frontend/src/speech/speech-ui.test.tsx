@@ -110,6 +110,8 @@ function install(options: {
     saveTtsPreferences: async (preferences) => preferences,
     synthesizeSpeech: async () => ({ ok: false as const, code: "missing-engine" as const, detail: "Kokoro is not configured." }),
     cancelTts: async () => {},
+    getAudioDevicePreferences: async () => ({ inputDeviceId: "default", outputDeviceId: "default" }),
+    saveAudioDevicePreferences: async (preferences) => preferences,
   };
   return { sent, cancelled };
 }

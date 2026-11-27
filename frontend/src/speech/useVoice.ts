@@ -11,6 +11,8 @@ import {
 } from "../../../shared/tts-preferences";
 import type { PanelPhase } from "../hooks/useConversation";
 import type { ConversationMessage } from "../../../shared/contract";
+import { bindPlaybackActions } from "./audio-device-actions";
+import { playbackAllowed } from "./audio-route";
 import { createSpeechPlayer, type SpeechPlayer } from "./playback";
 
 export type VoicePhase = "idle" | "preparing" | "speaking" | "error";
@@ -53,7 +55,9 @@ export function useVoice(
   const generation = useRef(0);
   const saveGeneration = useRef(0);
   const preferencesRef = useRef(preferences);
+  const phaseRef = useRef(phase);
   const player = useRef<SpeechPlayer | null>(null);
+  phaseRef.current = phase;
   const wasGenerating = useRef(false);
   const speakRef = useRef<(text: string, index: number | null) => void>(() => {});
   preferencesRef.current = preferences;
@@ -83,9 +87,27 @@ export function useVoice(
     };
   }, []);
 
+  useEffect(() => bindPlaybackActions({
+    speaking: () => phaseRef.current === "preparing" || phaseRef.current === "speaking",
+    stopPlayback: (notice) => {
+      const busy = phaseRef.current === "preparing" || phaseRef.current === "speaking";
+      if (!busy) {
+        return;
+      }
+      generation.current += 1;
+      player.current?.stop();
+      setLevel(0);
+      setActiveIndex(null);
+      setPhase("idle");
+      setNotice(notice);
+      void window.eva?.cancelTts();
+    },
+    applySink: (sinkId) => audioPlayer().setSink(sinkId),
+  }), []);
+
   useEffect(() => () => {
     generation.current += 1;
-    player.current?.stop();
+    player.current?.close();
     void window.eva?.cancelTts();
   }, []);
 
@@ -126,6 +148,11 @@ export function useVoice(
     if (segments.length === 0) {
       setPhase("error");
       setNotice("Nothing to speak.");
+      return;
+    }
+    if (!playbackAllowed()) {
+      setPhase("error");
+      setNotice("The selected speaker is disconnected. Choose a device or system default before EVA speaks.");
       return;
     }
     const epoch = generation.current + 1;
@@ -173,6 +200,12 @@ export function useVoice(
         if (next) {
           pending = request(api, next, preferencesRef.current);
         }
+        if (!playbackAllowed()) {
+          setPhase("error");
+          setLevel(0);
+          setNotice("The selected speaker is disconnected. Choose a device or system default before EVA speaks.");
+          return;
+        }
         setPhase("speaking");
         await audioPlayer().play(result.audio, preferencesRef.current.volume, setLevel, () => {
           if (firstSound === null) {
@@ -190,11 +223,11 @@ export function useVoice(
       const load = loadMs === null ? "model already loaded" : `model load ${(loadMs / 1000).toFixed(1)} s`;
       const first = firstSound === null ? "" : ` · first sound ${(firstSound / 1000).toFixed(1)} s`;
       setTimingTitle(`${load} · synthesis ${(elapsed / 1000).toFixed(1)} s${first}`);
-    } catch {
+    } catch (error) {
       if (epoch === generation.current) {
         setPhase("error");
         setLevel(0);
-        setNotice("Local speech failed.");
+        setNotice(error instanceof Error && error.message.length > 0 ? error.message : "Local speech failed.");
       }
     }
   }

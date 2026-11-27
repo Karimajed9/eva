@@ -165,6 +165,20 @@ Kokoro-82M is Apache-2.0. kokoro-onnx and onnxruntime are MIT. phonemizer and es
 
 If the paths are missing, Listen says so and chat continues.
 
+## Audio devices
+
+Open **Audio** in the conversation panel to choose the microphone and the speaker independently. **System default** follows the Windows default device. It is not a saved physical id, so a later change in Windows Sound settings is picked up the next time EVA records or speaks.
+
+Choosing a named microphone uses that device for Speak. Changing it while a recording is in progress discards that recording; EVA does not switch devices halfway through. **Test microphone** shows a live level and then stops. The test is not sent to Whisper, Ollama, OpenAI, or Kokoro, and it is not stored. Closing Audio, stopping the test, or starting Speak releases the microphone. EVA does not open the microphone when it launches or when the panel is opened. If device names are blank, **Allow audio access** opens the microphone once so the browser can reveal them, then closes it. **Refresh devices** asks the operating system again.
+
+Listen, automatic replies, voice preview, and **Test output** share one playback path and the existing volume slider. There is not a second volume control. Changing the speaker stops the sound that is playing and applies the new device to the next sound. The written reply keeps going. If the selected speaker is unplugged, playback stops and EVA does not continue through another device until you choose one, including System default. When that same device id comes back, EVA arms it again and does not start recording or playback by itself. A matching display name is not treated as the same device.
+
+The choice is stored in `audio-device-preferences.json` in Electron's user-data directory. Missing or invalid files fall back to System default. Existing speech and voice preference files are left as they are. Device ids are not sent to the AI provider and are not written to the log.
+
+EVA runs on Electron 45.4.1. That Chromium build provides `navigator.mediaDevices.enumerateDevices()`, `getUserMedia()` with a `deviceId` constraint, `devicechange`, and `AudioContext.setSinkId()`. Playback stays on the existing Web Audio graph, so EVA routes that context instead of an `<audio>` element. The trusted window may receive microphone audio and `speaker-selection`. Camera, screen capture, and other device permissions stay denied. If `setSinkId` is missing, a chosen speaker is refused and System default can still play.
+
+On Windows, USB microphones, USB headsets, Bluetooth headphones, and HDMI outputs appear when the OS exposes them. A headset often shows up as one input and one output. If a device is missing, check Settings, System, Sound, then Refresh devices in EVA. Bluetooth stacks sometimes issue a new device id; pick the device again if the saved one stays unavailable.
+
 ## Privacy and limits
 
 - Local is the default. Nothing in a conversation is sent to OpenAI unless that send has cloud mode enabled. Microphone audio is never sent to OpenAI.

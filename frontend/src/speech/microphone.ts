@@ -1,4 +1,7 @@
+import { microphoneConstraints } from "../../../shared/audio-devices";
 import { samplesToSpeechWav } from "../../../shared/speech-wav";
+import { audioDeviceActions } from "./audio-device-actions";
+import { captureDevice } from "./audio-route";
 
 export interface CaptureResources {
   level(): number;
@@ -90,12 +93,15 @@ export async function openMicrophone(): Promise<MicrophoneSession> {
     throw new DOMException("No microphone is available.", "NotFoundError");
   }
   const stream = await media.getUserMedia({
-    audio: {
-      channelCount: 1,
-      echoCancellation: true,
-      noiseSuppression: true,
-    },
+    audio: microphoneConstraints(captureDevice()),
     video: false,
+  });
+  let intentional = false;
+  const track = stream.getAudioTracks()[0];
+  track?.addEventListener("ended", () => {
+    if (!intentional) {
+      audioDeviceActions().discardRecording("The microphone was disconnected. This recording was discarded.");
+    }
   });
   const context = new AudioContext();
   const source = context.createMediaStreamSource(stream);
@@ -110,6 +116,7 @@ export async function openMicrophone(): Promise<MicrophoneSession> {
       : "";
     recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
   } catch (error) {
+    intentional = true;
     releaseStream(stream);
     await context.close();
     throw error;
@@ -141,6 +148,7 @@ export async function openMicrophone(): Promise<MicrophoneSession> {
         return { samples: mixDown(decoded), sampleRate: decoded.sampleRate };
       },
       stopTracks() {
+        intentional = true;
         releaseStream(stream);
         if (recorder.state !== "inactive") {
           try {
@@ -158,6 +166,7 @@ export async function openMicrophone(): Promise<MicrophoneSession> {
       },
     });
   } catch (error) {
+    intentional = true;
     releaseStream(stream);
     await context.close();
     throw error;

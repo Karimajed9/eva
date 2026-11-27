@@ -536,6 +536,33 @@ textarea {
   gap: 8px;
 }
 
+.device-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.level-meter {
+  height: 8px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(138, 244, 255, 0.12);
+  border: 1px solid rgba(138, 244, 255, 0.25);
+}
+
+.level-meter > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(138, 244, 255, 0.45), var(--cyan));
+}
+
 .composer {
   display: grid;
   grid-template-columns: 1fr auto;

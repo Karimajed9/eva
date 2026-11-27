@@ -3,7 +3,10 @@ export function describeMicrophoneFailure(error: unknown): string {
   if (name === "NotAllowedError" || name === "SecurityError") {
     return "Microphone permission was denied. EVA did not record anything.";
   }
-  if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError") {
+  if (name === "OverconstrainedError") {
+    return "The selected microphone is unavailable.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
     return "No microphone is available.";
   }
   if (name === "NotReadableError" || name === "AbortError") {
