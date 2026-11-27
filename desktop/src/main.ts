@@ -7,6 +7,7 @@ import { IpcChannel } from "../../shared/contract";
 import { BackendManager } from "./backend-manager";
 import { registerIpc } from "./ipc";
 import { resolveBackendJar } from "./process-launch";
+import { applyProjectEnv } from "./project-env";
 import { redactSecrets } from "./redact";
 import { createMainWindow, hardenSession, installNavigationGuards, rendererFilePath } from "./window";
 
@@ -53,6 +54,7 @@ function broadcastStatus(): void {
 }
 
 async function bootstrap(): Promise<void> {
+  applyProjectEnv(process.env);
   if (process.platform !== "darwin") {
     Menu.setApplicationMenu(null);
   }
@@ -94,6 +96,7 @@ async function bootstrap(): Promise<void> {
     version: shellVersion(),
     platform: process.platform,
     preferencesPath: path.join(app.getPath("userData"), "speech-preferences.json"),
+    ttsPreferencesPath: path.join(app.getPath("userData"), "tts-preferences.json"),
   });
 
   try {

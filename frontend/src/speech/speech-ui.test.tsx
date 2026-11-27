@@ -105,6 +105,11 @@ function install(options: {
     cancelSpeech: async () => {
       cancelled.speech += 1;
     },
+    getTtsStatus: async () => ({ engine: "kokoro" as const, available: false, detail: "Kokoro is not configured.", loadMs: null }),
+    getTtsPreferences: async () => ({ voice: "af_heart" as const, speed: 1, volume: 1, autoPlay: false }),
+    saveTtsPreferences: async (preferences) => preferences,
+    synthesizeSpeech: async () => ({ ok: false as const, code: "missing-engine" as const, detail: "Kokoro is not configured." }),
+    cancelTts: async () => {},
   };
   return { sent, cancelled };
 }
@@ -263,6 +268,7 @@ describe("microphone transcription", () => {
     setMicrophoneOpener(mic.open);
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
+    fireEvent.click(screen.getByRole("button", { name: /^Listening,/ }));
     fireEvent.change(screen.getByLabelText("Speech language"), { target: { value: "fr" } });
     fireEvent.change(screen.getByLabelText("Add vocabulary term"), { target: { value: "tea" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));

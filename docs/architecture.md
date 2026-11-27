@@ -1,6 +1,6 @@
 # Architecture
 
-EVA (Electronic Virtual Assistant) is a local desktop assistant. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Milestone 1 is the shell and the health check. Milestone 2 adds conversation through a provider interface. Ollama is the default and stays on the machine. OpenAI runs only after an explicit opt-in. Milestone 3 adds microphone capture and local whisper.cpp transcription. Text-to-speech, tools, mail, permanent memory, and computer automation are not implemented.
+EVA (Electronic Virtual Assistant) is a local desktop assistant. A React interface sits inside a sandboxed Electron window. Electron owns the operating-system privileges and talks to a Java core that is bound to loopback. Milestone 1 is the shell and the health check. Milestone 2 adds conversation through a provider interface. Ollama is the default and stays on the machine. OpenAI runs only after an explicit opt-in. Milestone 3 adds microphone capture and local whisper.cpp transcription, then Kokoro playback through a resident Python worker. Tools, mail, permanent memory, and computer automation are not implemented.
 
 ```mermaid
 flowchart LR
@@ -9,6 +9,7 @@ flowchart LR
   java -->|"local chat"| ollama["Ollama on loopback"]
   java -->|"only after opt-in"| openai["OpenAI"]
   java -->|"local file"| whisper["whisper.cpp"]
+  java -->|"stdin PCM"| kokoro["Kokoro worker"]
 ```
 
 ## Processes
@@ -113,6 +114,16 @@ Fonts are bundled with the app. The interface does not load assets from a third-
 
 **The dev server is loopback too.** Vite listens on `127.0.0.1:5173`. Production loads `frontend/dist` over `file:`.
 
+## Kokoro playback
+
+`TextToSpeechEngine` is implemented by `KokoroSpeechEngine`. The desktop calls `POST /api/tts/synthesize` with a voice, a speed, and the already-normalized sentence. Java starts `python -u worker.py` from the four absolute `EVA_KOKORO_*` paths, once. The child environment keeps the operating-system paths and drops `EVA_SESSION_TOKEN` and `EVA_OPENAI_API_KEY`. The worker sets Hugging Face offline mode itself. Stdout is a JSON header followed by raw PCM. Stderr is discarded. There is no shell and no extra HTTP server.
+
+The model stays loaded. Cancel writes one line and the page stops the `AudioContext` immediately. A `Kokoro.create` call that has already started still finishes inside the worker; Java drops that audio if the request is no longer current, and it does not send the next sentence. Quitting EVA destroys the worker with the Java process tree.
+
+The worker clips samples to the range −1 to 1 and converts them to 16-bit PCM once. Java wraps those bytes as WAV without scaling them again. The page decodes that WAV into one buffer source, then connects source, gain, level meter, and speakers in a single chain. Gain follows the slider in even loudness steps across 30 dB, ramped over 30 ms when the slider moves. Full scale stays at unity. Zero is silent.
+
+Playback begins after a reply is complete. Sentence overlap is only that queue. Speaking while tokens are still arriving is left for a later milestone, because a stopped reply must not be spoken. Voices are the five English Kokoro ids plus `ff_siwis`. Arabic is absent from Kokoro-82M v1.0.
+
 ## Future: a resident whisper.cpp process
 
 The working path starts `whisper-cli` for every recording. That process loads the ggml weights, transcribes one WAV, and exits. Wall-clock time therefore includes model load every time. On CPU, multilingual Small spent most of the wait in inference; multilingual Base is the practical default because recognition is much shorter. Load time is still paid on every utterance. The status line shows the wall-clock duration. When whisper.cpp prints `load time` and `total time`, the tooltip splits model load from recognition. Those numbers, the audio, the vocabulary, and the transcript are not written to the log.
@@ -135,6 +146,7 @@ A later change can keep one `whisper-server` process. That server is not impleme
 - Stop keeps the question and any partial text already produced. That partial text is marked stopped and is not sent as a completed answer on the next request. The question is sent.
 - Ollama must already be running and the model must already be installed. EVA will not start Ollama or pull a model.
 - whisper.cpp and a multilingual ggml model must already be installed. EVA will not download either one. `ggml-base.bin` is the practical CPU default; multilingual Small was too slow because every recording reloads the model and then runs inference on the CPU. AMD GPU use needs a Vulkan build and `EVA_WHISPER_GPU=vulkan`. A resident `whisper-server` is documented and not built. Recordings are capped at 60 seconds. The vocabulary prompt is a hint. Live microphone and live whisper.cpp runs depend on that local setup.
+- Kokoro playback needs Python 3.12, the pinned packages in `speech/kokoro/requirements.txt`, and the two v1.0 weight files. EVA does not download them. The worker uses the CPU runtime so the AMD GPU stays available for Ollama. One ONNX call cannot be interrupted; stopping speech drops the audio and skips the rest of the queue. French is `ff_siwis` only. Arabic is not available. Mid-reply speech during token streaming is not implemented.
 - OpenAI cost is an estimate from a small rate table, and only when the API returns token counts. It is not an invoice.
 - The unit tests mock both providers. CI does not need a running Ollama or a paid OpenAI account. A mocked test is not a claim that the live provider answered. Separately, GPT-6 Luna was live-tested once through EVA with a real OpenAI key, and that send succeeded. No other OpenAI model has been live-tested.
 - If the shell process is terminated without running its quit handlers, the pid file is the recovery path. A reused pid whose command line cannot be confirmed is left alone.

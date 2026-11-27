@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { redactSecrets } from "./redact";
 
 describe("redactSecrets", () => {
-  it("removes session tokens and bearer headers", () => {
-    const token = "abc123def456abc123def456abc123de";
-    const input = `starting with ${token} and Authorization: Bearer ${token}`;
-    expect(redactSecrets(input, [token])).toBe("starting with [redacted] and Authorization: Bearer [redacted]");
-    expect(redactSecrets(input, [token])).not.toContain(token);
+  it("removes a supplied secret and a bearer header that was not in the list", () => {
+    const session = "evasessionevasession";
+    expect(redactSecrets(`starting with ${session}`, [session])).toBe("starting with [redacted]");
+    expect(redactSecrets(`starting with ${session}`, [session])).not.toContain(session);
+    expect(redactSecrets("Authorization: Bearer evasessionevasession", [])).toBe("Authorization: Bearer [redacted]");
   });
 
   it("leaves ordinary log lines unchanged", () => {

@@ -10,14 +10,18 @@ import {
   type SpeechFailure,
 } from "../../shared/contract";
 import { parseSpeechAudioRequest, parseSpeechPreferences } from "../../shared/speech-preferences";
+import { parseTtsRequest, parseTtsStatus } from "../../shared/tts";
+import { parseTtsPreferences } from "../../shared/tts-preferences";
 import type { BackendManager } from "./backend-manager";
 import { readSpeechPreferences, writeSpeechPreferences } from "./speech-preferences";
+import { readTtsPreferences, writeTtsPreferences } from "./tts-preferences";
 import { isTrustedRendererUrl, type RendererTrustOptions } from "./trusted-renderer";
 
 export interface IpcOptions extends RendererTrustOptions {
   version: string;
   platform: NodeJS.Platform;
   preferencesPath: string;
+  ttsPreferencesPath: string;
 }
 
 export function registerIpc(manager: BackendManager, options: IpcOptions): void {
@@ -117,6 +121,46 @@ export function registerIpc(manager: BackendManager, options: IpcOptions): void 
     await manager.core("POST", "/api/speech/cancel");
     return { ok: true as const, status: "CANCELLED" };
   });
+
+  ipcMain.handle(IpcChannel.getTts, async (event) => {
+    assertTrustedSender(event, options);
+    const result = await manager.core("GET", "/api/tts");
+    if ("ok" in result) {
+      return result;
+    }
+    return parseTtsStatus(result.json) ?? invalidTts();
+  });
+
+  ipcMain.handle(IpcChannel.synthesizeSpeech, async (event, payload: unknown) => {
+    assertTrustedSender(event, options);
+    const request = parseTtsRequest(payload);
+    if (!request) {
+      return invalidTtsRequest();
+    }
+    return manager.synthesizeSpeech(request);
+  });
+
+  ipcMain.handle(IpcChannel.cancelTts, async (event) => {
+    assertTrustedSender(event, options);
+    manager.abortTts();
+    await manager.core("POST", "/api/tts/cancel");
+    return { ok: true as const, status: "CANCELLED" };
+  });
+
+  ipcMain.handle(IpcChannel.getTtsPreferences, async (event) => {
+    assertTrustedSender(event, options);
+    return readTtsPreferences(options.ttsPreferencesPath);
+  });
+
+  ipcMain.handle(IpcChannel.saveTtsPreferences, async (event, payload: unknown) => {
+    assertTrustedSender(event, options);
+    const preferences = parseTtsPreferences(payload);
+    if (!preferences) {
+      return invalidTtsRequest();
+    }
+    await writeTtsPreferences(options.ttsPreferencesPath, preferences);
+    return preferences;
+  });
 }
 
 function invalidConversation(): ConversationFailure {
@@ -133,6 +177,14 @@ function invalidAudio(): SpeechFailure {
 
 function invalidSettings(): SpeechFailure {
   return { ok: false, code: "invalid-audio", detail: "The speech settings were rejected." };
+}
+
+function invalidTts(): { ok: false; code: "engine-error"; detail: string } {
+  return { ok: false, code: "engine-error", detail: "Local speech failed." };
+}
+
+function invalidTtsRequest(): { ok: false; code: "invalid-speech"; detail: string } {
+  return { ok: false, code: "invalid-speech", detail: "The speech request was rejected." };
 }
 
 export function assertTrustedSender(event: IpcMainInvokeEvent, options: IpcOptions): void {

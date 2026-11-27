@@ -36,11 +36,18 @@ credentials.json
 *.sqlite3
 *.mv.db
 
-# Local speech engines and models. Do not commit whisper.cpp binaries or ggml weights.
+# Local speech engines and models. Do not commit binaries, weights, or environments.
 /whisper/
+/kokoro/
 /models/
 ggml-*.bin
 *.wav
+*.onnx
+voices-*.bin
+.venv/
+venv/
+__pycache__/
+*.pyc
 
 *.log
 npm-debug.log*

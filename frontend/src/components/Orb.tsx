@@ -5,13 +5,13 @@ import { orbTone } from "../status-copy";
 
 interface OrbProps {
   state: BackendState;
-  phase?: "idle" | "processing" | "responding" | "error" | "recording";
+  phase?: "idle" | "processing" | "responding" | "error" | "recording" | "preparing" | "speaking";
   micLevel?: number;
 }
 
 export function Orb({ state, phase = "idle", micLevel = 0 }: OrbProps) {
   const reduced = useReducedMotion();
-  const style = phase === "recording"
+  const style = phase === "recording" || phase === "speaking"
     ? { "--mic-level": micLevel.toFixed(3) } as CSSProperties
     : undefined;
   return (

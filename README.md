@@ -102,7 +102,14 @@ Speech-to-text stays on this machine. EVA records from the microphone, converts 
 
 The language control defaults to automatic detection (`-l auto`). English, French, and Arabic can be selected instead. An optional vocabulary is empty until you add terms. Those terms are joined and passed as one `--prompt` argument, which is a hint to whisper.cpp rather than a guarantee. A name such as "Muay Thai" can still be missed. The vocabulary is stored in the Electron user-data file `speech-preferences.json` and is not sent anywhere else.
 
-EVA does not download whisper.cpp or a model. Set both paths before launching:
+EVA does not download whisper.cpp or a model. Copy `.env.example` to `.env` in the repository root and set the paths there. The Electron main process reads that file before it starts Java. A variable already set in the operating system wins. Relative paths are resolved from the repository root, then checked with the same absolute-path rules as before. `.env` is not read by Vite or the window, and keys other than the listed EVA settings are ignored.
+
+```text
+EVA_WHISPER_EXECUTABLE=C:\Tools\whisper\whisper-cli.exe
+EVA_WHISPER_MODEL=C:\Tools\whisper\ggml-base.bin
+```
+
+An operating-system variable still overrides the file:
 
 ```powershell
 $env:EVA_WHISPER_EXECUTABLE = "C:\Tools\whisper\whisper-cli.exe"
@@ -114,7 +121,7 @@ The executable must be an absolute path named `whisper-cli.exe`, `whisper-cli`, 
 
 After a transcription, the status line shows how long the recording was and how long transcription took. When whisper.cpp prints its load and total times, hovering that line shows model load separately from recognition. Those numbers are not logged.
 
-CPU is the default. The core passes `-ng`, so a GPU build still runs on the CPU. For an AMD GPU, build whisper.cpp with Vulkan (`-DGGML_VULKAN=ON` in CMake) and start EVA with:
+CPU is the default. The core passes `-ng`, so a GPU build still runs on the CPU. For an AMD GPU, build whisper.cpp with Vulkan (`-DGGML_VULKAN=ON` in CMake) and set `EVA_WHISPER_GPU=vulkan` in `.env`, or in the shell:
 
 ```powershell
 $env:EVA_WHISPER_GPU = "vulkan"
@@ -123,6 +130,40 @@ $env:EVA_WHISPER_GPU = "vulkan"
 `on` and `amd` mean the same thing. EVA then omits `-ng` and lets that whisper.cpp build select its GPU. A CPU-only binary should keep the variable unset.
 
 If either path is missing, the conversation panel says so and a transcription request fails before a process starts. The rest of EVA keeps working.
+
+## Local speech playback
+
+Playback uses [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) through [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx). The Java core keeps one Python worker for the session. The worker loads the model once and reads requests on stdin. Audio comes back as 24 kHz mono PCM and is wrapped as WAV. The page plays it with the Web Audio API. One gain node sits on the only path to the speakers. The slider is stored from 0 to 1 and mapped in even loudness steps across 30 dB: 0 is silent, full is normal loudness with no extra boost, and the lower half stays usable instead of dropping away. Moving it updates the sound that is already playing, with a short ramp so the change does not click. Kokoro never sees the volume. Synthesis stays local whether the chat provider is Ollama or OpenAI. EVA does not call a cloud voice API.
+
+The default voice is Heart (`af_heart`, American English). Bella, Nova, and Sarah are the other American voices. Emma (`bf_emma`) is British English. French is Siwis (`ff_siwis`). Kokoro-82M v1.0 has that one French voice, trained on less than 11 hours, and its own card grades it B−. There is no Arabic voice in this model, so EVA does not offer one.
+
+Speak completed replies is off until you turn it on. While it is on, EVA speaks a reply only after that reply finishes successfully. A stopped, failed, or partial reply stays silent. Listen on a finished reply plays it again. Preview speaks one fixed sentence and does not add a chat message. Stop speaking cuts the sound immediately and drops anything still queued. Starting the microphone does the same. Stopping speech does not stop the model from writing the reply. Closing EVA stops the worker with the Java process.
+
+A reply is split into sentences after it is complete, so the next sentence can be synthesized while the current one plays. Speaking in the middle of token streaming is not implemented. Fenced code is replaced with "code block omitted". Long links become "a link". The transcript on screen is unchanged.
+
+EVA does not download Python, the packages, or the weights. Install them yourself and leave them out of git:
+
+```powershell
+py -3.12 -m venv C:\Tools\kokoro\venv
+C:\Tools\kokoro\venv\Scripts\python.exe -m pip install -r speech\kokoro\requirements.txt
+```
+
+Download `kokoro-v1.0.onnx` and `voices-v1.0.bin` from the kokoro-onnx `model-files-v1.1` release. Put the four paths in `.env`. The worker can be the repository-relative path `speech/kokoro/worker.py`.
+
+```text
+EVA_KOKORO_PYTHON=C:\Tools\kokoro\venv\Scripts\python.exe
+EVA_KOKORO_WORKER=speech/kokoro/worker.py
+EVA_KOKORO_MODEL=C:\Tools\kokoro\kokoro-v1.0.onnx
+EVA_KOKORO_VOICES=C:\Tools\kokoro\voices-v1.0.bin
+```
+
+The same names still work as operating-system variables, and those win over `.env`. The OpenAI key, when you use one, can live in `.env` as `EVA_OPENAI_API_KEY`. It is passed only to the Java process. Speech workers do not receive it, and it is not sent to the window. Do not commit `.env`.
+
+Use the absolute path of this checkout for the worker when you set it from the shell. The Python path must be `python.exe` or `python3.exe`. The worker file must be named `worker.py`. The weights must use those two file names. Do not install `onnxruntime-gpu`; the CPU runtime leaves the AMD GPU free for Ollama.
+
+Kokoro-82M is Apache-2.0. kokoro-onnx and onnxruntime are MIT. phonemizer and espeak-ng, which the worker uses for pronunciation, are GPL-3. They stay in the virtual environment you install. EVA does not ship them.
+
+If the paths are missing, Listen says so and chat continues.
 
 ## Privacy and limits
 

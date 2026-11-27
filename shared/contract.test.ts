@@ -85,7 +85,7 @@ describe("loopbackUrl", () => {
 });
 
 describe("IpcChannel", () => {
-  it("exposes only the status, conversation, and speech channels", () => {
+  it("exposes only the status, conversation, speech, and speech playback channels", () => {
     expect(Object.values(IpcChannel)).toEqual([
       "eva:backend:get-status",
       "eva:backend:status",
@@ -100,6 +100,11 @@ describe("IpcChannel", () => {
       "eva:speech:cancel",
       "eva:speech:get-preferences",
       "eva:speech:save-preferences",
+      "eva:tts:get",
+      "eva:tts:synthesize",
+      "eva:tts:cancel",
+      "eva:tts:get-preferences",
+      "eva:tts:save-preferences",
     ]);
   });
 });

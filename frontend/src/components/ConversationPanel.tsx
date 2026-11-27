@@ -1,7 +1,9 @@
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ConversationView } from "../hooks/useConversation";
 import type { SpeechView } from "../speech/useSpeech";
+import type { VoiceView } from "../speech/useVoice";
+import { ttsVoices, type TtsVoiceId } from "../../../shared/tts-preferences";
 import type { SpeechLanguage } from "../../../shared/speech-preferences";
 import { HudPanel } from "./HudPanel";
 
@@ -14,9 +16,10 @@ function atBottom(node: HTMLElement): boolean {
 interface ConversationPanelProps {
   conversation: ConversationView;
   speech: SpeechView;
+  voice: VoiceView;
 }
 
-export function ConversationPanel({ conversation, speech }: ConversationPanelProps) {
+export function ConversationPanel({ conversation, speech, voice }: ConversationPanelProps) {
   const reduced = useReducedMotion();
   const [draft, setDraft] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
@@ -35,6 +38,9 @@ export function ConversationPanel({ conversation, speech }: ConversationPanelPro
     || cloudBlocked;
   const micDisabled = conversation.phase === "loading" || conversation.phase === "generating";
   const location = conversation.provider === "openai" ? "Cloud" : "Local";
+  const modelLabel = models.find((item) => item.id === conversation.model)?.label ?? "No model";
+  const languageLabel = speechLanguageLabel(speech.language);
+  const voiceLabel = ttsVoices.find((item) => item.id === voice.voice)?.label ?? "Voice";
 
   useEffect(() => {
     if (speech.transcriptVersion === appliedTranscript.current) {
@@ -100,45 +106,55 @@ export function ConversationPanel({ conversation, speech }: ConversationPanelPro
           <p className="eyebrow">Conversation</p>
           <p className="stamp" data-testid="active-provider">{location} · {selected?.label ?? "Provider"}</p>
         </div>
-        <div className="conversation-tools">
-          <label>
-            Provider
-            <select
-              aria-label="Provider"
-              value={conversation.provider}
-              onChange={(event) => conversation.setProvider(event.target.value === "openai" ? "openai" : "ollama")}
-            >
-              <option value="ollama">Ollama · local</option>
-              <option value="openai">OpenAI · cloud</option>
-            </select>
-          </label>
-          <label>
-            Model
-            <select
-              aria-label="Model"
-              value={conversation.model}
-              onChange={(event) => conversation.setModel(event.target.value)}
-            >
-              {models.length === 0 ? <option value="">No model available</option> : null}
-              {models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-          </label>
-          <button type="button" onClick={() => void conversation.reset()}>New conversation</button>
+        <div className="panel-scroll">
+        <div className="panel-folds">
+          <Fold title="Provider" summary={`${location} · ${modelLabel}`}>
+            <div className="conversation-tools">
+              <label>
+                Provider
+                <select
+                  aria-label="Provider"
+                  value={conversation.provider}
+                  onChange={(event) => conversation.setProvider(event.target.value === "openai" ? "openai" : "ollama")}
+                >
+                  <option value="ollama">Ollama · local</option>
+                  <option value="openai">OpenAI · cloud</option>
+                </select>
+              </label>
+              <label>
+                Model
+                <select
+                  aria-label="Model"
+                  value={conversation.model}
+                  onChange={(event) => conversation.setModel(event.target.value)}
+                >
+                  {models.length === 0 ? <option value="">No model available</option> : null}
+                  {models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={() => void conversation.reset()}>New conversation</button>
+            </div>
+            {conversation.provider === "openai" ? (
+              <p className="notice" data-testid="cloud-notice">
+                Cloud mode sends this conversation to OpenAI. It stays off until you opt in, and EVA will not fall back to the cloud on its own.
+                <label className="choice">
+                  <input
+                    type="checkbox"
+                    checked={conversation.cloudEnabled}
+                    onChange={(event) => conversation.setCloudEnabled(event.target.checked)}
+                  />
+                  Send messages to OpenAI
+                </label>
+              </p>
+            ) : null}
+          </Fold>
+          <Fold title="Listening" summary={languageLabel}>
+            <SpeechSettings speech={speech} />
+          </Fold>
+          <Fold title="Voice" summary={voice.autoPlay ? `${voiceLabel} · automatic` : voiceLabel}>
+            <VoiceSettings voice={voice} />
+          </Fold>
         </div>
-        <SpeechSettings speech={speech} />
-        {conversation.provider === "openai" ? (
-          <p className="notice" data-testid="cloud-notice">
-            Cloud mode sends this conversation to OpenAI. It stays off until you opt in, and EVA will not fall back to the cloud on its own.
-            <label className="choice">
-              <input
-                type="checkbox"
-                checked={conversation.cloudEnabled}
-                onChange={(event) => conversation.setCloudEnabled(event.target.checked)}
-              />
-              Send messages to OpenAI
-            </label>
-          </p>
-        ) : null}
         <div className="transcript-frame">
           <div className="transcript" ref={transcript} aria-live="polite">
             {conversation.messages.length === 0 ? <p className="empty-copy">{conversation.detail}</p> : null}
@@ -147,6 +163,15 @@ export function ConversationPanel({ conversation, speech }: ConversationPanelPro
                 <p className={`bubble ${message.role}`} data-role={message.role} data-status={message.status}>
                   {message.text}
                 </p>
+                {message.role === "assistant" && message.text.trim().length > 0 ? (
+                  <button
+                    type="button"
+                    className="listen"
+                    onClick={() => (voice.activeIndex === index && voice.phase !== "idle" ? voice.stop() : voice.speak(message.text, index))}
+                  >
+                    {voice.activeIndex === index && voice.phase !== "idle" ? "Stop speaking" : "Listen"}
+                  </button>
+                ) : null}
                 {message.status === "stopped" ? <p className="status-copy">Stopped</p> : null}
               </div>
             ))}
@@ -168,6 +193,11 @@ export function ConversationPanel({ conversation, speech }: ConversationPanelPro
             {conversation.usage.estimatedUsd === null ? "" : ` · about $${conversation.usage.estimatedUsd.toFixed(4)}`}
           </p>
         ) : null}
+        {voice.notice ? (
+          <p className="speech-status" data-testid="voice-status" data-phase={voice.phase} title={voice.timingTitle || undefined}>
+            {voice.notice}
+          </p>
+        ) : null}
         {speech.notice ? (
           <p
             className="speech-status"
@@ -180,6 +210,7 @@ export function ConversationPanel({ conversation, speech }: ConversationPanelPro
             {speech.notice}
           </p>
         ) : null}
+        </div>
         <form
           ref={composer}
           className="composer"
@@ -233,6 +264,38 @@ export function ConversationPanel({ conversation, speech }: ConversationPanelPro
       </HudPanel>
     </motion.div>
   );
+}
+
+function Fold({ title, summary, children }: { title: string; summary: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="fold">
+      <button
+        type="button"
+        className="fold-toggle"
+        aria-expanded={open}
+        aria-label={`${title}, ${summary}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="fold-title">{title}</span>
+        <span className="fold-summary">{summary}</span>
+      </button>
+      {open ? <div className="fold-body">{children}</div> : null}
+    </section>
+  );
+}
+
+function speechLanguageLabel(language: SpeechLanguage): string {
+  if (language === "en") {
+    return "English";
+  }
+  if (language === "fr") {
+    return "French";
+  }
+  if (language === "ar") {
+    return "Arabic";
+  }
+  return "Detect language";
 }
 
 function SpeechSettings({ speech }: { speech: SpeechView }) {
@@ -339,6 +402,66 @@ function SpeechSettings({ speech }: { speech: SpeechView }) {
         </div>
         {error ? <p className="vocab-error">{error}</p> : null}
       </div>
+    </div>
+  );
+}
+
+function VoiceSettings({ voice }: { voice: VoiceView }) {
+  const locked = voice.phase === "preparing" || voice.phase === "speaking";
+  return (
+    <div className="speech-tools">
+      <label>
+        Voice
+        <select
+          aria-label="Voice"
+          value={voice.voice}
+          disabled={locked}
+          onChange={(event) => voice.setVoice(event.target.value as TtsVoiceId)}
+        >
+          {ttsVoices.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}{item.lang === "fr-fr" ? " · French" : item.lang === "en-gb" ? " · British" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Speed
+        <input
+          aria-label="Speaking speed"
+          type="range"
+          min="0.5"
+          max="1.5"
+          step="0.05"
+          value={voice.speed}
+          disabled={locked}
+          onChange={(event) => voice.setSpeed(Number(event.target.value))}
+        />
+      </label>
+      <label>
+        Volume
+        <input
+          aria-label="Playback volume"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={voice.volume}
+          onChange={(event) => voice.setVolume(Number(event.target.value))}
+        />
+      </label>
+      <label className="choice">
+        <input
+          type="checkbox"
+          checked={voice.autoPlay}
+          onChange={(event) => voice.setAutoPlay(event.target.checked)}
+        />
+        Speak completed replies
+      </label>
+      <button type="button" disabled={voice.phase === "preparing" || voice.phase === "speaking"} onClick={voice.preview}>Preview voice</button>
+      {voice.phase === "idle" ? null : (
+        <button type="button" onClick={voice.stop}>Stop speaking</button>
+      )}
     </div>
   );
 }

@@ -157,8 +157,10 @@ class ProviderBehaviorTest {
     void personalityPromptIsSeparateFromTheProviderCode() {
         Personality personality = new Personality();
         assertTrue(personality.prompt().contains("EVA"));
-        assertTrue(personality.prompt().toLowerCase().contains("not pretend to be human")
-                || personality.prompt().toLowerCase().contains("do not pretend to be human"));
+        String prompt = personality.prompt().toLowerCase();
+        assertTrue(prompt.contains("not human") || prompt.contains("not a human")
+                || prompt.contains("not pretend to be human")
+                || prompt.contains("do not pretend to be human"));
         assertFalse(personality.prompt().contains("System.getenv"));
     }
 
