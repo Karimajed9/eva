@@ -39,8 +39,9 @@ describe("audio device catalog", () => {
     });
     expect(microphoneConstraints(SYSTEM_AUDIO_DEVICE)).toEqual({
       channelCount: 1,
-      echoCancellation: true,
-      noiseSuppression: true,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
     });
     expect(sinkIdFor(SYSTEM_AUDIO_DEVICE)).toBe("");
   });

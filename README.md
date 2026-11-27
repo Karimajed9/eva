@@ -98,7 +98,7 @@ There is no automatic fallback. A local failure stays local. A cloud failure sta
 
 ## Local speech
 
-Speech-to-text stays on this machine. EVA records from the microphone, converts the audio to 16 kHz mono PCM WAV, and sends those bytes to the local core. The core runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp) once per recording. The transcript is placed in the message box, which scrolls when the text is longer than the box. EVA does not send it until you do. Recordings are temporary files and are deleted after transcription, cancellation, or a failed run. Audio, vocabulary, and transcript text are not written to the log.
+Speech-to-text stays on this machine. EVA records from the microphone, converts the audio to 16 kHz mono PCM WAV, and sends those bytes to the local core. A take with no audible sound is not sent. The core runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp) once per recording. The transcript is placed in the message box, which scrolls when the text is longer than the box. EVA does not send it until you do. Recordings are temporary files and are deleted after transcription, cancellation, or a failed run. Audio, vocabulary, and transcript text are not written to the log.
 
 The language control defaults to automatic detection (`-l auto`). English, French, and Arabic can be selected instead. An optional vocabulary is empty until you add terms. Those terms are joined and passed as one `--prompt` argument, which is a hint to whisper.cpp rather than a guarantee. A name such as "Muay Thai" can still be missed. The vocabulary is stored in the Electron user-data file `speech-preferences.json` and is not sent anywhere else.
 

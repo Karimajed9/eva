@@ -116,6 +116,14 @@ function install(options: {
   return { sent, cancelled };
 }
 
+function spokenSamples(): Float32Array {
+  const samples = new Float32Array(MIN_SPEECH_SAMPLES);
+  for (let index = 0; index < samples.length; index += 1) {
+    samples[index] = Math.sin((index / 16_000) * Math.PI * 2 * 440) * 0.2;
+  }
+  return samples;
+}
+
 function session(capture?: () => Promise<{ samples: Float32Array; sampleRate: number }>) {
   const stops: string[] = [];
   return {
@@ -123,7 +131,7 @@ function session(capture?: () => Promise<{ samples: Float32Array; sampleRate: nu
     open: async () => beginSession({
       level: () => 0.66,
       capture: capture ?? (async () => ({
-        samples: new Float32Array(MIN_SPEECH_SAMPLES).fill(0.1),
+        samples: spokenSamples(),
         sampleRate: 16_000,
       })),
       stopTracks: () => stops.push("stop"),
@@ -155,6 +163,29 @@ describe("microphone transcription", () => {
     await waitFor(() => expect(tracker.sent).toHaveLength(1));
     expect(tracker.sent[0]?.text).toBe("Set a timer for coffee");
     expect(screen.getByTestId("speech-status")).toHaveAttribute("data-phase", "ready");
+  });
+
+  it("does not transcribe silence into a word", async () => {
+    let calls = 0;
+    install({
+      transcribe: async () => {
+        calls += 1;
+        return { ok: true, text: "you" };
+      },
+    });
+    setMicrophoneOpener(async () => beginSession({
+      level: () => 0,
+      capture: async () => ({ samples: new Float32Array(MIN_SPEECH_SAMPLES), sampleRate: 16_000 }),
+      stopTracks: () => {},
+      close: async () => {},
+    }));
+    render(<App />);
+    await screen.findByText(/local models stay on this machine/i);
+    fireEvent.click(screen.getByRole("button", { name: "Speak" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+    expect(await screen.findByText(/no speech was heard/i)).toBeInTheDocument();
+    expect(calls).toBe(0);
+    expect(screen.getByLabelText("Message")).toHaveValue("");
   });
 
   it("explains a denied microphone and a missing model without sending audio to chat", async () => {
@@ -235,7 +266,7 @@ describe("microphone transcription", () => {
     setMicrophoneOpener(async () => beginSession({
       level: () => 0.5,
       capture: async () => ({
-        samples: new Float32Array(MIN_SPEECH_SAMPLES).fill(0.1),
+        samples: spokenSamples(),
         sampleRate: 16_000,
       }),
       stopTracks: () => {},

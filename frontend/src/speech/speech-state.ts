@@ -15,6 +15,9 @@ export function describeMicrophoneFailure(error: unknown): string {
   if (error instanceof Error && /too short/i.test(error.message)) {
     return "The recording was too short.";
   }
+  if (error instanceof Error && /no speech was heard/i.test(error.message)) {
+    return "No speech was heard.";
+  }
   if (error instanceof Error && /(too large|60 seconds)/i.test(error.message)) {
     return error.message;
   }

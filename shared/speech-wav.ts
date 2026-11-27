@@ -1,6 +1,8 @@
 export const SPEECH_RATE = 16_000;
 export const MIN_SPEECH_SECONDS = 0.3;
 export const MAX_SPEECH_SECONDS = 60;
+/** Loudest 50 ms. Room noise sits under this. Whisper otherwise invents a word such as "you". */
+export const SPEECH_RMS_FLOOR = 0.005;
 export const MIN_SPEECH_SAMPLES = SPEECH_RATE * 3 / 10;
 export const MAX_SPEECH_SAMPLES = SPEECH_RATE * MAX_SPEECH_SECONDS;
 export const MAX_SPEECH_BYTES = 44 + MAX_SPEECH_SAMPLES * 2;
@@ -64,6 +66,44 @@ export function encodePcm16Wav(samples: Float32Array, sampleRate = SPEECH_RATE):
 
 export function samplesToSpeechWav(samples: Float32Array, sampleRate: number): Uint8Array {
   return encodePcm16Wav(downsample(samples, sampleRate, SPEECH_RATE));
+}
+
+/** True when some 50 ms window is louder than room noise. A quiet start does not hide a later word. */
+export function audibleSpeech(samples: Float32Array, sampleRate: number): boolean {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || samples.length === 0) {
+    return false;
+  }
+  const window = Math.max(1, Math.round(sampleRate * 0.05));
+  const span = Math.min(window, samples.length);
+  let best = windowRms(samples, 0, span);
+  if (samples.length > window) {
+    const hop = Math.max(1, Math.floor(window / 2));
+    for (let start = hop; start + window <= samples.length; start += hop) {
+      const energy = windowRms(samples, start, window);
+      if (energy > best) {
+        best = energy;
+      }
+    }
+    const tail = windowRms(samples, samples.length - window, window);
+    if (tail > best) {
+      best = tail;
+    }
+  }
+  return best >= SPEECH_RMS_FLOOR;
+}
+
+function windowRms(samples: Float32Array, start: number, length: number): number {
+  let mean = 0;
+  for (let index = start; index < start + length; index += 1) {
+    mean += samples[index] ?? 0;
+  }
+  mean /= length;
+  let sum = 0;
+  for (let index = start; index < start + length; index += 1) {
+    const centered = (samples[index] ?? 0) - mean;
+    sum += centered * centered;
+  }
+  return Math.sqrt(sum / length);
 }
 
 export function speechWavError(value: Uint8Array): string | null {

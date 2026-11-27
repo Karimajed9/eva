@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ConversationView } from "../hooks/useConversation";
 import type { SpeechView } from "../speech/useSpeech";
-import { AudioDeviceSettings } from "../speech/AudioDeviceSettings";
+import { AudioDeviceSettings, MicLevelMeter } from "../speech/AudioDeviceSettings";
 import type { AudioDeviceView } from "../speech/useAudioDevices";
 import type { VoiceView } from "../speech/useVoice";
 import { ttsVoices, type TtsVoiceId } from "../../../shared/tts-preferences";
@@ -155,7 +155,7 @@ export function ConversationPanel({ conversation, speech, voice, devices }: Conv
             <SpeechSettings speech={speech} />
           </Fold>
           <Fold title="Audio" summary={audioSummary(devices)}>
-            <AudioDeviceSettings devices={devices} voice={voice} />
+            <AudioDeviceSettings devices={devices} voice={voice} microphoneLevel={speech.phase === "recording" ? speech.level : 0} />
           </Fold>
           <Fold title="Voice" summary={voice.autoPlay ? `${voiceLabel} · automatic` : voiceLabel}>
             <VoiceSettings voice={voice} />
@@ -216,6 +216,7 @@ export function ConversationPanel({ conversation, speech, voice, devices }: Conv
             {speech.notice}
           </p>
         ) : null}
+        {speech.phase === "recording" ? <MicLevelMeter level={speech.level} /> : null}
         </div>
         <form
           ref={composer}

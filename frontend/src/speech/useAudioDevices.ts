@@ -48,6 +48,9 @@ function browserPorts(): AudioDevicePorts {
       const stream = await media.getUserMedia({ audio: constraints, video: false });
       const AudioCtor = window.AudioContext;
       const context = AudioCtor ? new AudioCtor() : null;
+      if (context?.state === "suspended") {
+        await context.resume();
+      }
       const source = context ? context.createMediaStreamSource(stream) : null;
       const analyser = context ? context.createAnalyser() : null;
       if (analyser && source) {

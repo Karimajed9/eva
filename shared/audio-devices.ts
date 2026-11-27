@@ -24,6 +24,7 @@ export interface MicrophoneAudioConstraints {
   channelCount: number;
   echoCancellation: boolean;
   noiseSuppression: boolean;
+  autoGainControl: boolean;
   deviceId?: { exact: string };
 }
 
@@ -67,12 +68,17 @@ export function routeOutput(preference: string, outputs: readonly ListedDevice[]
   return { sinkId: "", missing: true, hold: true };
 }
 
-/** System default omits a device id so the OS default is read again on the next recording. */
+/**
+ * System default omits a device id so the OS default is read again on the next recording.
+ * Echo cancellation, noise suppression, and automatic gain are off. Those processors hold
+ * back the start of a take and turn a quiet room into a word.
+ */
 export function microphoneConstraints(deviceId: string): MicrophoneAudioConstraints {
   const audio: MicrophoneAudioConstraints = {
     channelCount: 1,
-    echoCancellation: true,
-    noiseSuppression: true,
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
   };
   if (deviceId !== SYSTEM_AUDIO_DEVICE) {
     audio.deviceId = { exact: deviceId };
