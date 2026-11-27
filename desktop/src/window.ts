@@ -22,8 +22,12 @@ export function hardenSession(options: RendererTrustOptions): void {
     const mediaTypes = "mediaTypes" in details ? details.mediaTypes : undefined;
     callback(microphoneRequestAllowed(permission, { requestingUrl, isMainFrame, mediaTypes }, options));
   });
-  session.defaultSession.setPermissionCheckHandler((_contents, permission, _requestingOrigin, details) => {
-    return microphoneCheckAllowed(permission, details, options);
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
+    return microphoneCheckAllowed(permission, {
+      requestingUrl: details.requestingUrl || requestingOrigin,
+      isMainFrame: details.isMainFrame,
+      mediaType: details.mediaType,
+    }, options);
   });
   const policy = contentSecurityPolicy(options.dev, options.rendererUrl);
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {

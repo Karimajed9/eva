@@ -11,8 +11,10 @@ import {
 } from "../../shared/contract";
 import { parseSpeechAudioRequest, parseSpeechPreferences } from "../../shared/speech-preferences";
 import { parseTtsRequest, parseTtsStatus } from "../../shared/tts";
+import { parseAudioDevicePreferences } from "../../shared/audio-device-preferences";
 import { parseTtsPreferences } from "../../shared/tts-preferences";
 import type { BackendManager } from "./backend-manager";
+import { readAudioDevicePreferences, writeAudioDevicePreferences } from "./audio-device-preferences";
 import { readSpeechPreferences, writeSpeechPreferences } from "./speech-preferences";
 import { readTtsPreferences, writeTtsPreferences } from "./tts-preferences";
 import { isTrustedRendererUrl, type RendererTrustOptions } from "./trusted-renderer";
@@ -22,6 +24,7 @@ export interface IpcOptions extends RendererTrustOptions {
   platform: NodeJS.Platform;
   preferencesPath: string;
   ttsPreferencesPath: string;
+  audioDevicePreferencesPath: string;
 }
 
 export function registerIpc(manager: BackendManager, options: IpcOptions): void {
@@ -159,6 +162,21 @@ export function registerIpc(manager: BackendManager, options: IpcOptions): void 
       return invalidTtsRequest();
     }
     await writeTtsPreferences(options.ttsPreferencesPath, preferences);
+    return preferences;
+  });
+
+  ipcMain.handle(IpcChannel.getAudioDevicePreferences, async (event) => {
+    assertTrustedSender(event, options);
+    return readAudioDevicePreferences(options.audioDevicePreferencesPath);
+  });
+
+  ipcMain.handle(IpcChannel.saveAudioDevicePreferences, async (event, payload: unknown) => {
+    assertTrustedSender(event, options);
+    const preferences = parseAudioDevicePreferences(payload);
+    if (!preferences) {
+      throw new Error("Invalid audio device settings.");
+    }
+    await writeAudioDevicePreferences(options.audioDevicePreferencesPath, preferences);
     return preferences;
   });
 }

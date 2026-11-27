@@ -10,6 +10,7 @@ import type {
 } from "../../../shared/contract";
 import type { SpeechAudioRequest, SpeechPreferences } from "../../../shared/speech-preferences";
 import type { TtsRequest, TtsResult, TtsStatus } from "../../../shared/tts";
+import type { AudioDevicePreferences } from "../../../shared/audio-device-preferences";
 import type { TtsPreferences } from "../../../shared/tts-preferences";
 
 export interface EvaBridge {
@@ -30,6 +31,8 @@ export interface EvaBridge {
   saveTtsPreferences(preferences: TtsPreferences): Promise<TtsPreferences>;
   synthesizeSpeech(request: TtsRequest): Promise<TtsResult>;
   cancelTts(): Promise<void>;
+  getAudioDevicePreferences(): Promise<AudioDevicePreferences>;
+  saveAudioDevicePreferences(preferences: AudioDevicePreferences): Promise<AudioDevicePreferences>;
   subscribeConversation(listener: (delta: ConversationDelta) => void): () => void;
 }
 

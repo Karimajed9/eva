@@ -69,4 +69,32 @@ describe("microphone access", () => {
       mediaType: "audio",
     }, production)).toBe(false);
   });
+
+  it("allows speaker selection only for the trusted main frame", () => {
+    const fileUrl = pathToFileURL(rendererFile).href;
+    expect(microphoneRequestAllowed("speaker-selection", {
+      requestingUrl: fileUrl,
+      isMainFrame: true,
+    }, production)).toBe(true);
+    expect(microphoneCheckAllowed("speaker-selection", {
+      requestingUrl: fileUrl,
+      isMainFrame: true,
+    }, production)).toBe(true);
+    expect(microphoneRequestAllowed("speaker-selection", {
+      requestingUrl: "https://evil.example/",
+      isMainFrame: true,
+    }, production)).toBe(false);
+    expect(microphoneRequestAllowed("speaker-selection", {
+      requestingUrl: fileUrl,
+      isMainFrame: false,
+    }, production)).toBe(false);
+    expect(microphoneCheckAllowed("speaker-selection", {
+      requestingUrl: fileUrl,
+      isMainFrame: false,
+    }, production)).toBe(false);
+    expect(microphoneRequestAllowed("usb", {
+      requestingUrl: fileUrl,
+      isMainFrame: true,
+    }, production)).toBe(false);
+  });
 });

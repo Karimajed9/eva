@@ -4,12 +4,14 @@ import { Header } from "./components/Header";
 import { Stage } from "./components/Stage";
 import { useConversation } from "./hooks/useConversation";
 import { useAppInfo, useBackendStatus } from "./hooks/useBackendStatus";
+import { useAudioDevices } from "./speech/useAudioDevices";
 import { useSpeech } from "./speech/useSpeech";
 import { useVoice } from "./speech/useVoice";
 
 export function App() {
   const status = useBackendStatus();
   const conversation = useConversation(status.state);
+  const devices = useAudioDevices();
   const voice = useVoice(status.state, conversation);
   const speech = useSpeech(status.state, voice.stop);
   const appInfo = useAppInfo();
@@ -32,7 +34,7 @@ export function App() {
       <div className="vignette" />
       <Header status={status} platform={platform} />
       <main className="workspace">
-        <ConversationPanel conversation={conversation} speech={speech} voice={voice} />
+        <ConversationPanel conversation={conversation} speech={speech} voice={voice} devices={devices} />
         <Stage status={status} phase={orbPhase} micLevel={level} />
         <ActivityPanel status={status} />
       </main>

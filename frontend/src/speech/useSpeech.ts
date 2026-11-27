@@ -7,6 +7,9 @@ import {
   type SpeechLanguage,
   type SpeechPreferences,
 } from "../../../shared/speech-preferences";
+import { bindCaptureActions } from "./audio-device-actions";
+import { stopActiveProbe } from "./audio-device-model";
+import { audioRouteReady, whenAudioRouteReady } from "./audio-route";
 import { openRecording, type MicrophoneSession } from "./microphone";
 import { describeMicrophoneFailure, formatDuration, MAX_RECORDING_MS, readyNotice, timingTitle } from "./speech-state";
 
@@ -129,6 +132,31 @@ export function useSpeech(coreState: BackendState, beforeStart?: () => void): Sp
     }
   }
 
+  const abandonRef = useRef<(notice: string) => void>(() => {});
+  abandonRef.current = (notice: string) => {
+    if (!armingRef.current && !sessionRef.current && phaseRef.current !== "recording") {
+      return;
+    }
+    epoch.current += 1;
+    clearTimer();
+    const session = sessionRef.current;
+    sessionRef.current = null;
+    finishingRef.current = false;
+    armingRef.current = false;
+    setArming(false);
+    setLevel(0);
+    session?.cancel();
+    void window.eva?.cancelSpeech();
+    setPhase("idle");
+    setTiming("");
+    setNotice(notice);
+  };
+
+  useEffect(() => bindCaptureActions({
+    captureBusy: () => armingRef.current || sessionRef.current !== null || phaseRef.current === "recording",
+    discardRecording: (notice) => abandonRef.current(notice),
+  }), []);
+
   useEffect(() => () => {
     epoch.current += 1;
     clearTimer();
@@ -217,6 +245,7 @@ export function useSpeech(coreState: BackendState, beforeStart?: () => void): Sp
   }
 
   function start(): void {
+    stopActiveProbe();
     beforeStart?.();
     if (armingRef.current || sessionRef.current || phaseRef.current === "recording" || phaseRef.current === "transcribing") {
       return;
@@ -230,8 +259,20 @@ export function useSpeech(coreState: BackendState, beforeStart?: () => void): Sp
     epoch.current = id;
     armingRef.current = true;
     setArming(true);
-    setNotice("Requesting microphone access.");
-    void openRecording().then((session) => {
+    setNotice(audioRouteReady() ? "Requesting microphone access." : "Checking audio devices.");
+    void whenAudioRouteReady().then((settled) => {
+      if (epoch.current !== id) {
+        return null;
+      }
+      if (!settled) {
+        throw new Error("Audio devices could not be listed.");
+      }
+      setNotice("Requesting microphone access.");
+      return openRecording();
+    }).then((session) => {
+      if (!session) {
+        return;
+      }
       if (epoch.current !== id) {
         session.cancel();
         return;

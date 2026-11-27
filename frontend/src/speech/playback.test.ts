@@ -1,8 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { createSpeechPlayer, playbackGain } from "./playback";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { markAudioRouteSettled, resetAudioRoute, setPlaybackRoute } from "./audio-route";
+import { applyContextSink, createSpeechPlayer, playbackGain } from "./playback";
+
+beforeEach(() => {
+  markAudioRouteSettled();
+  setPlaybackRoute("", true);
+});
 
 afterEach(() => {
   delete (window as Window & { AudioContext?: unknown }).AudioContext;
+  resetAudioRoute();
 });
 
 describe("playbackGain", () => {
@@ -111,5 +118,97 @@ describe("createSpeechPlayer", () => {
     player.stop();
     await playing;
     expect(links).toContain("gain!");
+  });
+
+  it("keeps one output path and refuses a chosen speaker when setSinkId is missing", async () => {
+    const sinks: string[] = [];
+    class FakeContext {
+      state = "running";
+      currentTime = 0;
+      destination = { label: "speakers", connect() {}, disconnect() {} };
+      resume() {
+        return Promise.resolve();
+      }
+      decodeAudioData() {
+        return Promise.resolve({});
+      }
+      setSinkId(sinkId: string) {
+        sinks.push(sinkId);
+        return Promise.resolve();
+      }
+      createGain() {
+        return { gain: { value: 1, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {}, disconnect() {} };
+      }
+      createAnalyser() {
+        return { fftSize: 0, connect() {}, disconnect() {}, getByteTimeDomainData(samples: Uint8Array) { samples.fill(128); } };
+      }
+      createBufferSource() {
+        return {
+          connect() {},
+          disconnect() {},
+          start() {},
+          stop() {},
+          set onended(callback: () => void) {
+            callback();
+          },
+        };
+      }
+    }
+    window.AudioContext = FakeContext as unknown as typeof AudioContext;
+    setPlaybackRoute("spk-a", true);
+    const player = createSpeechPlayer();
+    await player.play(new Uint8Array(4), 1, () => {}, () => {});
+    expect(sinks).toEqual(["spk-a"]);
+    const blocked = { ...new FakeContext(), setSinkId: undefined };
+    await expect(applyContextSink(blocked as unknown as AudioContext, "spk-a")).resolves.toBe("unsupported");
+    await expect(applyContextSink(blocked as unknown as AudioContext, "")).resolves.toBe("applied");
+    setPlaybackRoute("", false);
+    await expect(player.play(new Uint8Array(4), 1, () => {}, () => {})).rejects.toThrow(/disconnected/i);
+  });
+
+  it("does not play through the default speaker while the saved output is still resolving", async () => {
+    resetAudioRoute();
+    const sinks: string[] = [];
+    class FakeContext {
+      state = "running";
+      currentTime = 0;
+      destination = { connect() {}, disconnect() {} };
+      resume() {
+        return Promise.resolve();
+      }
+      decodeAudioData() {
+        return Promise.resolve({});
+      }
+      setSinkId(sinkId: string) {
+        sinks.push(sinkId);
+        return Promise.resolve();
+      }
+      createGain() {
+        return { gain: { value: 1, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {}, disconnect() {} };
+      }
+      createAnalyser() {
+        return { fftSize: 0, connect() {}, disconnect() {}, getByteTimeDomainData(samples: Uint8Array) { samples.fill(128); } };
+      }
+      createBufferSource() {
+        return {
+          connect() {},
+          disconnect() {},
+          start() {},
+          stop() {},
+          set onended(callback: () => void) {
+            callback();
+          },
+        };
+      }
+    }
+    window.AudioContext = FakeContext as unknown as typeof AudioContext;
+    const player = createSpeechPlayer();
+    const playing = player.play(new Uint8Array(4), 1, () => {}, () => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sinks).toEqual([]);
+    setPlaybackRoute("spk-a", true);
+    markAudioRouteSettled();
+    await playing;
+    expect(sinks).toEqual(["spk-a"]);
   });
 });

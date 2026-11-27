@@ -16,6 +16,7 @@ const production: IpcOptions = {
   platform: "win32",
   preferencesPath: path.join("user-data", "speech-preferences.json"),
   ttsPreferencesPath: path.join("user-data", "tts-preferences.json"),
+  audioDevicePreferencesPath: path.join("user-data", "audio-device-preferences.json"),
 };
 
 function eventWithUrl(url: string, parent: unknown = null): IpcMainInvokeEvent {

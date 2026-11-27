@@ -12,11 +12,20 @@ function showVoice(): void {
   }
 }
 
+function showAudio(): void {
+  const toggle = screen.getByRole("button", { name: /^Audio,/ });
+  if (toggle.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(toggle);
+  }
+}
+
 afterEach(() => {
   setSpeechPlayer(() => ({
     play: async () => {},
     setVolume() {},
+    setSink: async () => "applied" as const,
     stop() {},
+    close() {},
   }));
   delete window.eva;
 });
@@ -36,7 +45,11 @@ function player(): SpeechPlayer & { plays: number } {
       });
     },
     setVolume() {},
+    setSink: async () => "applied" as const,
     stop() {
+      seen.release();
+    },
+    close() {
       seen.release();
     },
   };
@@ -99,6 +112,8 @@ function install(options: {
       return { ok: true as const, audio: new Uint8Array(8), elapsedMs: 20, loadMs: 0, audioMs: 1000, sampleRate: 24000 };
     },
     cancelTts: async () => {},
+    getAudioDevicePreferences: async () => ({ inputDeviceId: "default", outputDeviceId: "default" }),
+    saveAudioDevicePreferences: async (preferences) => preferences,
   };
   return { sent, spoken };
 }
@@ -157,6 +172,8 @@ describe("local speech playback", () => {
       },
       stop() {},
       setVolume() {},
+      setSink: async () => "applied" as const,
+      close() {},
     }));
     render(<App />);
     await screen.findByText(/local models stay on this machine/i);
@@ -204,13 +221,18 @@ describe("local speech playback", () => {
       setVolume(volume) {
         live.push(volume);
       },
+      setSink: async () => "applied" as const,
       stop() {
+        release();
+      },
+      close() {
         release();
       },
     }));
     install();
     render(<App />);
     showVoice();
+    showAudio();
     await waitFor(() => expect((screen.getByLabelText("Playback volume") as HTMLInputElement).value).toBe("0.5"));
     fireEvent.click(screen.getByRole("button", { name: "Preview voice" }));
     await waitFor(() => expect(played).toEqual([0.5]));

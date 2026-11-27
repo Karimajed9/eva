@@ -3,6 +3,7 @@ import {
   MAX_SPEECH_SAMPLES,
   MIN_SPEECH_SAMPLES,
   SPEECH_RATE,
+  audibleSpeech,
   encodePcm16Wav,
   parseSpeechWav,
   samplesToSpeechWav,
@@ -45,5 +46,14 @@ describe("speech wav", () => {
     expect(parseSpeechWav(new TextEncoder().encode("not audio"))).toBeNull();
     expect(parseSpeechWav({ path: "C:\\evil.exe" })).toBeNull();
     expect(parseSpeechWav(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength))).not.toBeNull();
+  });
+
+  it("treats room noise as silence and keeps a word that starts late", () => {
+    const quiet = new Float32Array(SPEECH_RATE).fill(0.2);
+    expect(audibleSpeech(quiet, SPEECH_RATE)).toBe(false);
+    const late = new Float32Array(SPEECH_RATE);
+    late.set(tone(Math.round(SPEECH_RATE * 0.05), SPEECH_RATE), SPEECH_RATE - Math.round(SPEECH_RATE * 0.05));
+    expect(audibleSpeech(late, SPEECH_RATE)).toBe(true);
+    expect(audibleSpeech(new Float32Array(0), SPEECH_RATE)).toBe(false);
   });
 });

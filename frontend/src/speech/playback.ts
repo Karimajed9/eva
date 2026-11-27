@@ -1,9 +1,15 @@
+import { playbackAllowed, playbackSink, whenAudioRouteReady } from "./audio-route";
+
 const GAIN_RAMP_SECONDS = 0.03;
+
+export type SinkResult = "applied" | "unsupported" | "failed";
 
 export interface SpeechPlayer {
   play(wav: Uint8Array, volume: number, onLevel: (level: number) => void, onStart: () => void): Promise<void>;
   setVolume(volume: number): void;
+  setSink(sinkId: string): Promise<SinkResult>;
   stop(): void;
+  close(): void;
 }
 
 const VOLUME_RANGE_DB = 30;
@@ -18,6 +24,22 @@ export function playbackGain(volume: number): number {
     return 1;
   }
   return 10 ** ((-VOLUME_RANGE_DB * (1 - position)) / 20);
+}
+
+type SinkContext = AudioContext & { setSinkId?: (sinkId: string) => Promise<void> };
+
+/** Routes the existing context. An empty sink id is the OS default. Unsupported builds can still play that default. */
+export async function applyContextSink(context: AudioContext, sinkId: string): Promise<SinkResult> {
+  const target = context as SinkContext;
+  if (typeof target.setSinkId !== "function") {
+    return sinkId === "" ? "applied" : "unsupported";
+  }
+  try {
+    await target.setSinkId(sinkId);
+    return "applied";
+  } catch {
+    return "failed";
+  }
 }
 
 function rampGain(param: AudioParam, context: BaseAudioContext, volume: number): void {
@@ -35,6 +57,38 @@ export function createSpeechPlayer(): SpeechPlayer {
   let level = 1;
   let frame = 0;
   let stopped = false;
+  let sinkChain: Promise<void> = Promise.resolve();
+
+  function stopSource(): void {
+    cancelAnimationFrame(frame);
+    const current = source;
+    releaseGraph();
+    if (!current) {
+      return;
+    }
+    try {
+      current.stop();
+    } catch {
+      // The buffer already finished.
+    }
+  }
+
+  function enqueueSink(sinkId: string): Promise<SinkResult> {
+    let result: SinkResult = "applied";
+    const job = sinkChain.then(async () => {
+      if (!context) {
+        result = sinkId === "" ? "applied" : "unsupported";
+        const browser = window as Window & { AudioContext?: { prototype?: { setSinkId?: unknown } } };
+        if (sinkId !== "" && typeof browser.AudioContext?.prototype?.setSinkId === "function") {
+          result = "applied";
+        }
+        return;
+      }
+      result = await applyContextSink(context, sinkId);
+    });
+    sinkChain = job.then(() => undefined, () => undefined);
+    return job.then(() => result);
+  }
 
   function releaseGraph(): void {
     source?.disconnect();
@@ -52,9 +106,30 @@ export function createSpeechPlayer(): SpeechPlayer {
         rampGain(gain.gain, context, volume);
       }
     },
+    async setSink(sinkId) {
+      stopped = true;
+      stopSource();
+      return enqueueSink(sinkId);
+    },
     async play(wav, volume, onLevel, onStart) {
       level = volume;
       stopped = false;
+      const settled = await whenAudioRouteReady();
+      if (stopped) {
+        onLevel(0);
+        return;
+      }
+      if (!settled) {
+        throw new Error("Audio devices could not be listed.");
+      }
+      if (!playbackAllowed()) {
+        throw new Error("The selected speaker is disconnected. Choose a device or system default before EVA speaks.");
+      }
+      await sinkChain;
+      if (stopped) {
+        onLevel(0);
+        return;
+      }
       const browser = window as Window & { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
       const AudioCtor = browser.AudioContext ?? browser.webkitAudioContext;
       if (!AudioCtor) {
@@ -64,6 +139,17 @@ export function createSpeechPlayer(): SpeechPlayer {
       const active = context;
       if (active.state === "suspended") {
         await active.resume();
+      }
+      const routed = await applyContextSink(active, playbackSink());
+      if (stopped) {
+        onLevel(0);
+        return;
+      }
+      if (routed === "failed") {
+        throw new Error("EVA could not use the selected speaker.");
+      }
+      if (routed === "unsupported") {
+        throw new Error("This EVA build cannot route audio to a chosen speaker. Sound stays on the system default.");
       }
       const copy = new ArrayBuffer(wav.byteLength);
       new Uint8Array(copy).set(wav);
@@ -115,16 +201,15 @@ export function createSpeechPlayer(): SpeechPlayer {
     },
     stop() {
       stopped = true;
-      cancelAnimationFrame(frame);
-      const current = source;
-      releaseGraph();
-      if (!current) {
-        return;
-      }
-      try {
-        current.stop();
-      } catch {
-        // The buffer already finished.
+      stopSource();
+    },
+    close() {
+      stopped = true;
+      stopSource();
+      const current = context;
+      context = null;
+      if (current && current.state !== "closed") {
+        void current.close();
       }
     },
   };

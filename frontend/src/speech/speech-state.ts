@@ -3,7 +3,10 @@ export function describeMicrophoneFailure(error: unknown): string {
   if (name === "NotAllowedError" || name === "SecurityError") {
     return "Microphone permission was denied. EVA did not record anything.";
   }
-  if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError") {
+  if (name === "OverconstrainedError") {
+    return "The selected microphone is unavailable.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
     return "No microphone is available.";
   }
   if (name === "NotReadableError" || name === "AbortError") {
@@ -12,11 +15,17 @@ export function describeMicrophoneFailure(error: unknown): string {
   if (error instanceof Error && /too short/i.test(error.message)) {
     return "The recording was too short.";
   }
+  if (error instanceof Error && /no speech was heard/i.test(error.message)) {
+    return "No speech was heard.";
+  }
   if (error instanceof Error && /(too large|60 seconds)/i.test(error.message)) {
     return error.message;
   }
   if (error instanceof Error && /already in progress/i.test(error.message)) {
     return "A recording is already in progress.";
+  }
+  if (error instanceof Error && /still starting|could not be listed/i.test(error.message)) {
+    return error.message;
   }
   return "The microphone could not be opened.";
 }

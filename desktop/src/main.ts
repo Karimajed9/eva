@@ -97,6 +97,7 @@ async function bootstrap(): Promise<void> {
     platform: process.platform,
     preferencesPath: path.join(app.getPath("userData"), "speech-preferences.json"),
     ttsPreferencesPath: path.join(app.getPath("userData"), "tts-preferences.json"),
+    audioDevicePreferencesPath: path.join(app.getPath("userData"), "audio-device-preferences.json"),
   });
 
   try {
