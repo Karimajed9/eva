@@ -20,6 +20,8 @@ export const IpcChannel = {
   cancelTts: "eva:tts:cancel",
   getTtsPreferences: "eva:tts:get-preferences",
   saveTtsPreferences: "eva:tts:save-preferences",
+  getAudioDevicePreferences: "eva:audio:get-device-preferences",
+  saveAudioDevicePreferences: "eva:audio:save-device-preferences",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];

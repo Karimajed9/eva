@@ -12,19 +12,29 @@ export interface MicrophoneCheckDetails {
   mediaType?: string;
 }
 
+function trustedMainFrame(url: string | undefined, isMainFrame: boolean | undefined, options: RendererTrustOptions): boolean {
+  if (isMainFrame === false) {
+    return false;
+  }
+  return Boolean(url && isTrustedRendererUrl(url, options));
+}
+
 export function microphoneRequestAllowed(
   permission: string,
   details: MicrophoneRequestDetails,
   options: RendererTrustOptions,
 ): boolean {
-  if (permission !== "media" || details.isMainFrame === false) {
+  if (!trustedMainFrame(details.requestingUrl, details.isMainFrame, options)) {
+    return false;
+  }
+  if (permission === "speaker-selection") {
+    return true;
+  }
+  if (permission !== "media") {
     return false;
   }
   const types = details.mediaTypes ?? [];
-  if (types.length !== 1 || types[0] !== "audio") {
-    return false;
-  }
-  return Boolean(details.requestingUrl && isTrustedRendererUrl(details.requestingUrl, options));
+  return types.length === 1 && types[0] === "audio";
 }
 
 export function microphoneCheckAllowed(
@@ -32,11 +42,14 @@ export function microphoneCheckAllowed(
   details: MicrophoneCheckDetails,
   options: RendererTrustOptions,
 ): boolean {
-  if (permission !== "media" || details.isMainFrame === false) {
+  if (!trustedMainFrame(details.requestingUrl, details.isMainFrame, options)) {
     return false;
   }
-  if (details.mediaType !== "audio") {
+  if (permission === "speaker-selection") {
+    return true;
+  }
+  if (permission !== "media") {
     return false;
   }
-  return Boolean(details.requestingUrl && isTrustedRendererUrl(details.requestingUrl, options));
+  return details.mediaType === "audio";
 }

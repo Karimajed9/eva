@@ -36,6 +36,11 @@ import {
   type TtsStatus,
 } from "../../shared/tts";
 import {
+  defaultAudioDevicePreferences,
+  parseAudioDevicePreferences,
+  type AudioDevicePreferences,
+} from "../../shared/audio-device-preferences";
+import {
   defaultTtsPreferences,
   parseTtsPreferences,
   type TtsPreferences,
@@ -178,6 +183,21 @@ const eva = {
   },
   async cancelTts(): Promise<void> {
     await ipcRenderer.invoke(IpcChannel.cancelTts);
+  },
+  async getAudioDevicePreferences(): Promise<AudioDevicePreferences> {
+    return parseAudioDevicePreferences(await ipcRenderer.invoke(IpcChannel.getAudioDevicePreferences))
+      ?? { ...defaultAudioDevicePreferences };
+  },
+  async saveAudioDevicePreferences(preferences: AudioDevicePreferences): Promise<AudioDevicePreferences> {
+    const accepted = parseAudioDevicePreferences(preferences);
+    if (!accepted) {
+      throw new Error("Invalid audio device settings.");
+    }
+    const parsed = parseAudioDevicePreferences(await ipcRenderer.invoke(IpcChannel.saveAudioDevicePreferences, accepted));
+    if (!parsed) {
+      throw new Error("Invalid audio device settings.");
+    }
+    return parsed;
   },
   subscribeConversation(listener: (delta: ConversationDelta) => void): () => void {
     if (typeof listener !== "function") {
